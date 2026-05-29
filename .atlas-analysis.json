@@ -1,0 +1,115 @@
+{
+  "projectType": "saas",
+  "projectName": "HOT Tasking Manager",
+  "projectDescription": "A full-stack collaborative mapping platform that lets teams divide areas of interest into tasks for coordinated OpenStreetMap editing and validation.",
+  "theme": "palm",
+  "primaryColor": "#d43c3c",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "development-setup"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/projects-and-tasks",
+              "concepts/mapping-workflow",
+              "concepts/teams-and-organisations",
+              "concepts/roles-and-permissions"
+            ]
+          },
+          {
+            "group": "Deployment & Operations",
+            "pages": [
+              "operations/deployment",
+              "operations/configuration",
+              "operations/architecture",
+              "operations/migration",
+              "operations/ci-cd"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "contributing/overview",
+              "contributing/pull-requests",
+              "contributing/translations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "api/projects",
+              "api/tasks",
+              "api/users",
+              "api/teams",
+              "api/organisations",
+              "api/campaigns",
+              "api/notifications"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Divide large geographic areas of interest into small, mappable tasks",
+    "OSM OAuth2 authentication for all contributors",
+    "Role-based access: mapper, validator, project manager, organisation admin",
+    "Real-time task locking to prevent duplicate mapping",
+    "Integration with iD, Rapid, JOSM, and Potlatch2 editors",
+    "ohsome Now Stats integration for live OSM contribution metrics",
+    "Team and organisation management with partner pages",
+    "Automated task unlocking via cron jobs",
+    "Multilingual support (26+ languages)",
+    "Docker-based deployment with AWS CloudFormation support",
+    "FastAPI backend with async PostgreSQL (PostGIS) and ReactJS frontend",
+    "Sandbox/practice project mode for new mappers",
+    "OSM data export per project via EXPORT_TOOL integration"
+  ],
+  "publicApiSurface": [
+    "GET /api/v2/projects/{project_id}/",
+    "POST /api/v2/projects/",
+    "GET /api/v2/projects/{project_id}/tasks/",
+    "GET /api/v2/projects/{project_id}/tasks/{task_id}/",
+    "POST /api/v2/projects/{project_id}/tasks/actions/lock-for-mapping/",
+    "POST /api/v2/projects/{project_id}/tasks/actions/lock-for-validation/",
+    "POST /api/v2/projects/{project_id}/tasks/actions/unlock-after-mapping/",
+    "POST /api/v2/projects/{project_id}/tasks/actions/unlock-after-validation/",
+    "GET /api/v2/users/{user_id}/",
+    "GET /api/v2/users/queries/",
+    "GET /api/v2/teams/{team_id}/",
+    "POST /api/v2/teams/",
+    "GET /api/v2/organisations/{organisation_id}/",
+    "POST /api/v2/organisations/",
+    "GET /api/v2/campaigns/",
+    "GET /api/v2/notifications/",
+    "GET /api/v2/system/authentication/login/",
+    "GET /api/v2/system/authentication/callback/",
+    "GET /api/v2/system/statistics/",
+    "GET /api/v2/projects/{project_id}/statistics/",
+    "GET /api/v2/partners/{partner_id}/"
+  ]
+}

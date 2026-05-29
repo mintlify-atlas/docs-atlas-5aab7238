@@ -1,0 +1,731 @@
+---
+title: "Users API — Profiles, Statistics, and Task History"
+sidebarTitle: "Users"
+description: "REST endpoints for retrieving user profiles, activity statistics, task history, and OpenStreetMap account details in Tasking Manager."
+---
+
+Tasking Manager users are authenticated via OpenStreetMap OAuth. Each user profile stores their mapping level, role, notification preferences, social links, and contribution statistics. The endpoints below cover profile retrieval, self-service profile updates, task history, contribution statistics, and admin-level role management.
+
+All authenticated endpoints require an `Authorization: Token <session_token>` header. The API base path is `/api/v2`.
+
+---
+
+## User Resources
+
+### Get User by ID
+
+**GET** `/api/v2/users/{user_id}/`
+
+Returns the profile of a user by their Tasking Manager user ID. Requires a valid token.
+
+<CodeGroup>
+```bash Get user by ID
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/12345/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="user_id" type="integer" required>
+  The Tasking Manager user ID.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="id" type="integer">
+  Tasking Manager user ID.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  OSM username.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  User's platform role. One of: `READ_ONLY`, `MAPPER`, `ADMIN`.
+</ResponseField>
+
+<ResponseField name="mappingLevel" type="string">
+  Mapper skill level. One of: `BEGINNER`, `INTERMEDIATE`, `ADVANCED`.
+</ResponseField>
+
+<ResponseField name="projectsMapped" type="integer">
+  Total number of projects the user has contributed to.
+</ResponseField>
+
+<ResponseField name="pictureUrl" type="string">
+  URL to the user's OSM profile picture.
+</ResponseField>
+
+<ResponseField name="isExpert" type="boolean">
+  Whether the user has expert mode enabled.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User profile returned. |
+| `401` | Missing or invalid token. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
+### Delete User Account
+
+**DELETE** `/api/v2/users/{user_id}/`
+
+Deletes a user account. Only the user themselves or an admin may delete an account. Requires a valid token.
+
+<Warning>
+  Account deletion is permanent. All associated data for the user will be removed from the platform.
+</Warning>
+
+<CodeGroup>
+```bash Delete own account
+curl -X DELETE "https://tasking-manager-api.hotosm.org/api/v2/users/12345/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="user_id" type="integer" required>
+  ID of the user to delete.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User deleted. Returns the deleted user object. |
+| `400` | User not found. |
+| `401` | Caller does not have permission (not self or admin). |
+| `500` | Internal server error. |
+
+---
+
+### List All Users
+
+**GET** `/api/v2/users/`
+
+Returns a paginated list of all users. Supports filtering by username, role, and mapping level. Requires a valid token.
+
+<CodeGroup>
+```bash List users
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/?page=1&perPage=20" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```bash Search by username and role
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/?username=alice&role=ADMIN" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number for paginated results.
+</ParamField>
+
+<ParamField query="perPage" type="integer" default="20">
+  Number of results per page.
+</ParamField>
+
+<ParamField query="pagination" type="boolean" default="true">
+  When `false`, returns all users without pagination.
+</ParamField>
+
+<ParamField query="username" type="string">
+  Filter by full or partial OSM username.
+</ParamField>
+
+<ParamField query="role" type="string">
+  Filter by user role. Valid values: `ADMIN`, `READ_ONLY`, `MAPPER`.
+</ParamField>
+
+<ParamField query="level" type="string">
+  Filter by mapping level. Valid values: `BEGINNER`, `INTERMEDIATE`, `ADVANCED`.
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Field to sort results by.
+</ParamField>
+
+<ParamField query="sort_dir" type="string" default="asc">
+  Sort direction. Valid values: `asc`, `desc`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Paginated user list returned. |
+| `400` | Invalid query parameters. |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
+### Get User by Username
+
+**GET** `/api/v2/users/queries/{username}/`
+
+Returns user profile details by OpenStreetMap username. Requires a valid token.
+
+<CodeGroup>
+```bash Get user by username
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/Thinkwhere/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  The user's OpenStreetMap username (case-sensitive).
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User profile returned. |
+| `401` | Missing or invalid token. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
+### Search Users by Partial Username
+
+**GET** `/api/v2/users/queries/filter/{username}/`
+
+Returns a paginated list of users whose username matches the provided partial or full string. Optionally promotes project participants to the top of results. Requires a valid token.
+
+<CodeGroup>
+```bash Search by partial username
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/filter/ali/?page=1" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```bash Promote project participants
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/filter/ali/?projectId=1234" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  Partial or full OSM username string to filter by.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number for paginated results.
+</ParamField>
+
+<ParamField query="projectId" type="integer">
+  Optional project ID. When provided, users who have contributed to this project are promoted to the top of the results list.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Matching users returned. |
+| `401` | Missing or invalid token. |
+| `404` | No users found matching the filter. |
+| `500` | Internal server error. |
+
+---
+
+### Update Own Profile
+
+**PATCH** `/api/v2/users/me/actions/set-user/`
+
+Updates the authenticated user's own profile settings. The `id` in the request body must match the authenticated user's ID. Requires a valid token.
+
+<CodeGroup>
+```bash Update own profile
+curl -X PATCH "https://tasking-manager-api.hotosm.org/api/v2/users/me/actions/set-user/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": 12345,
+    "name": "Alice Mapper",
+    "city": "Nairobi",
+    "country": "Kenya",
+    "emailAddress": "alice@example.com",
+    "twitterId": "alicemaps",
+    "defaultEditor": "ID"
+  }'
+```
+</CodeGroup>
+
+#### Request Body
+
+<ParamField body="id" type="integer" required>
+  Must match the authenticated user's ID.
+</ParamField>
+
+<ParamField body="name" type="string">
+  Display name.
+</ParamField>
+
+<ParamField body="city" type="string">
+  City of residence.
+</ParamField>
+
+<ParamField body="country" type="string">
+  Country of residence.
+</ParamField>
+
+<ParamField body="emailAddress" type="string">
+  Email address for notifications. Set to an empty string or omit to clear.
+</ParamField>
+
+<ParamField body="twitterId" type="string">
+  Twitter handle (without `@`).
+</ParamField>
+
+<ParamField body="facebookId" type="string">
+  Facebook username.
+</ParamField>
+
+<ParamField body="linkedinId" type="string">
+  LinkedIn username.
+</ParamField>
+
+<ParamField body="gender" type="string">
+  Gender identity. Valid values: `MALE`, `FEMALE`, `SELF_DESCRIBE`, `PREFER_NOT`.
+</ParamField>
+
+<ParamField body="selfDescriptionGender" type="string">
+  Required when `gender` is `SELF_DESCRIBE`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Profile updated. |
+| `400` | Invalid request body or validation error. |
+| `401` | Token mismatch — `id` does not match authenticated user. |
+| `500` | Internal server error. |
+
+---
+
+### Get OSM Details for User
+
+**GET** `/api/v2/users/{username}/openstreetmap/`
+
+Returns OpenStreetMap account details for a user (account creation date and changeset count) by looking up the user directly from the OSM API. Requires a valid token.
+
+<CodeGroup>
+```bash Get OSM profile details
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/Thinkwhere/openstreetmap/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  The user's OpenStreetMap username.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="accountCreated" type="string">
+  ISO 8601 datetime when the OSM account was created.
+</ResponseField>
+
+<ResponseField name="changesetCount" type="integer">
+  Total number of OSM changesets made by this user.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | OSM details returned. |
+| `401` | Missing or invalid token. |
+| `404` | User not found in Tasking Manager. |
+| `502` | Bad response from the OpenStreetMap API. |
+| `500` | Internal server error. |
+
+---
+
+## User Tasks
+
+### Get Tasks Interacted With by User
+
+**GET** `/api/v2/users/{user_id}/tasks/`
+
+Returns a paginated list of tasks that a specific user has mapped or validated, with optional filters by status, project, and date range. Requires a valid token.
+
+<CodeGroup>
+```bash Get all tasks for a user
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/12345/tasks/?page=1&page_size=10" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```bash Filter by task status and project
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/12345/tasks/?status=MAPPED&project_id=1234&sort_by=-action_date" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="user_id" type="integer" required>
+  Tasking Manager user ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="status" type="string">
+  Filter by task status. Valid values: `READY`, `LOCKED_FOR_MAPPING`, `MAPPED`, `LOCKED_FOR_VALIDATION`, `VALIDATED`, `INVALIDATED`, `BADIMAGERY`.
+</ParamField>
+
+<ParamField query="project_status" type="string">
+  Filter by the status of the project the task belongs to. Valid values: `DRAFT`, `PUBLISHED`, `ARCHIVED`.
+</ParamField>
+
+<ParamField query="project_id" type="integer">
+  Restrict results to a specific project.
+</ParamField>
+
+<ParamField query="start_date" type="string">
+  ISO 8601 datetime. Return only task actions from this date onward.
+</ParamField>
+
+<ParamField query="end_date" type="string">
+  ISO 8601 datetime. Return only task actions up to this date.
+</ParamField>
+
+<ParamField query="sort_by" type="string" default="-action_date">
+  Sort order. Valid values: `action_date`, `-action_date`, `project_id`, `-project_id`. Prefix `-` for descending order.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number.
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="10">
+  Number of results per page.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task list returned (returns empty list if none found). |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
+### Get Tasks Currently Locked by Authenticated User
+
+**GET** `/api/v2/users/queries/tasks/locked/`
+
+Returns a list of tasks that the authenticated user currently has locked for mapping or validation, across all projects. Requires a valid token.
+
+<CodeGroup>
+```bash Get my locked tasks
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/tasks/locked/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Locked tasks returned. |
+| `401` | Missing or invalid token. |
+| `404` | User currently has no locked tasks. |
+| `500` | Internal server error. |
+
+---
+
+## User Statistics
+
+### Get User Contribution Statistics
+
+**GET** `/api/v2/users/{username}/statistics/`
+
+Returns detailed contribution statistics for a user by their OSM username. Includes total time spent mapping and validating, projects mapped, tasks mapped and validated, country contributions, and contributions by interest. Requires a valid token.
+
+<CodeGroup>
+```bash Get user statistics
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/Thinkwhere/statistics/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  The user's OpenStreetMap username.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="totalTimeSpent" type="integer">
+  Total mapping and validation time in seconds.
+</ResponseField>
+
+<ResponseField name="timeSpentMapping" type="integer">
+  Time spent mapping in seconds.
+</ResponseField>
+
+<ResponseField name="timeSpentValidating" type="integer">
+  Time spent validating in seconds.
+</ResponseField>
+
+<ResponseField name="projectsMapped" type="integer">
+  Number of distinct projects the user has contributed to.
+</ResponseField>
+
+<ResponseField name="tasksMapped" type="integer">
+  Total tasks the user has mapped.
+</ResponseField>
+
+<ResponseField name="tasksValidated" type="integer">
+  Total tasks the user has validated.
+</ResponseField>
+
+<ResponseField name="tasksInvalidated" type="integer">
+  Tasks the user has had invalidated by others.
+</ResponseField>
+
+<ResponseField name="tasksValidatedByOthers" type="integer">
+  Tasks originally mapped by this user and later validated by others.
+</ResponseField>
+
+<ResponseField name="countriesContributed" type="object">
+  Breakdown of contributions by country.
+
+  <Expandable title="countriesContributed fields">
+    <ResponseField name="countries" type="array">
+      Array of country contribution objects, each with `name`, `mapped`, `validated`, and `total`.
+    </ResponseField>
+    <ResponseField name="total" type="integer">
+      Total number of countries contributed to.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="contributionsByDay" type="array">
+  Array of daily contribution counts with `date` and `count` fields.
+</ResponseField>
+
+<ResponseField name="ContributionsByInterest" type="array">
+  Breakdown of contributions by mapped interest category.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User statistics returned. |
+| `401` | Missing or invalid token. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Platform User Registration Statistics
+
+**GET** `/api/v2/users/statistics/`
+
+Returns aggregate statistics about users registered within a specified date range (e.g., new registrations over time). Requires a valid token. Date range cannot exceed three years.
+
+<CodeGroup>
+```bash Get registration stats for a period
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/statistics/?startDate=2024-01-01&endDate=2024-06-30" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Query Parameters
+
+<ParamField query="startDate" type="string" required>
+  Start date in `YYYY-MM-DD` format.
+</ParamField>
+
+<ParamField query="endDate" type="string">
+  End date in `YYYY-MM-DD` format. Defaults to today. Cannot be earlier than `startDate`. Range cannot exceed three years.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User statistics returned. |
+| `400` | Invalid date format or range too large. |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
+## User Actions
+
+### Register User (Email-only)
+
+**POST** `/api/v2/users/actions/register/`
+
+Registers a user without an OpenStreetMap account using only an email address. This is used for observers or partners who do not map but need platform access. No authentication required.
+
+<CodeGroup>
+```bash Register user with email
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/users/actions/register/" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "observer@example.com"}'
+```
+</CodeGroup>
+
+#### Request Body
+
+<ParamField body="email" type="string" required>
+  Email address to register with.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="email" type="string">
+  The registered email address.
+</ResponseField>
+
+<ResponseField name="success" type="boolean">
+  `true` if the registration succeeded.
+</ResponseField>
+
+<ResponseField name="details" type="string">
+  Human-readable result message.
+</ResponseField>
+
+<ResponseField name="id" type="integer">
+  New user ID.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User registered. |
+| `400` | Invalid email or user already exists. |
+| `500` | Internal server error. |
+
+---
+
+### Set User Role
+
+**PATCH** `/api/v2/users/{username}/actions/set-role/{role}/`
+
+Sets a user's platform role. Restricted to **Admin** users only.
+
+<CodeGroup>
+```bash Promote user to admin
+curl -X PATCH \
+  "https://tasking-manager-api.hotosm.org/api/v2/users/Thinkwhere/actions/set-role/ADMIN/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  The OSM username of the user whose role is being changed.
+</ParamField>
+
+<ParamField path="role" type="string" required>
+  New role to assign. Valid values: `ADMIN`, `MAPPER`, `READ_ONLY`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Role set. Body: `{"Success": "Role Added"}` |
+| `401` | Missing or invalid token. |
+| `403` | Caller is not an admin. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
+### Set Mapper Level
+
+**PATCH** `/api/v2/users/{username}/actions/set-level/{level}/`
+
+Manually sets a user's mapping level. Restricted to **Admin** users only. Normally the platform auto-promotes users based on their contribution count.
+
+<CodeGroup>
+```bash Set mapping level
+curl -X PATCH \
+  "https://tasking-manager-api.hotosm.org/api/v2/users/Thinkwhere/actions/set-level/ADVANCED/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  The OSM username of the user.
+</ParamField>
+
+<ParamField path="level" type="string" required>
+  Mapping level to assign. Valid values: `BEGINNER`, `INTERMEDIATE`, `ADVANCED`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Level set. Body: `{"Success": "Level set"}` |
+| `400` | Invalid level value. |
+| `401` | Missing or invalid token or caller is not an admin. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Own Profile Example
+
+The following shows how to retrieve the authenticated user's own profile by first fetching the `/queries/myself/` convenience endpoint (via the user's session token) and then looking up full details by the returned user ID.
+
+<CodeGroup>
+```bash Get own user profile (by known ID)
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/12345/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```json Example response (200 OK)
+{
+  "id": 12345,
+  "username": "alice_mapper",
+  "role": "MAPPER",
+  "mappingLevel": "INTERMEDIATE",
+  "projectsMapped": 34,
+  "pictureUrl": "https://www.openstreetmap.org/rails/active_storage/.../avatar.jpg",
+  "isExpert": false,
+  "emailAddress": "alice@example.com",
+  "city": "Nairobi",
+  "country": "Kenya",
+  "defaultEditor": "ID",
+  "mentionsNotifications": true,
+  "projectsNotifications": true,
+  "tasksNotifications": true,
+  "taskValidationNotification": true,
+  "taskInvalidationNotification": true
+}
+```
+</CodeGroup>

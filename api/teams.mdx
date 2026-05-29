@@ -1,0 +1,684 @@
+---
+title: "Teams API — Create and Manage Contributor Groups"
+sidebarTitle: "Teams"
+description: "REST endpoints for creating teams, managing membership, and assigning teams to projects in HOT Tasking Manager."
+---
+
+Teams in HOT Tasking Manager are named groups of contributors that belong to a single organisation. They can be assigned to mapping projects with a specific role (Mapper, Validator, or Project Manager), and their membership can be open, by-request, or invite-only. The endpoints below cover the full lifecycle of a team: creation, retrieval, updates, deletion, membership management, and project assignments.
+
+---
+
+## Team CRUD
+
+### List Teams
+
+<br />
+
+**`GET /api/v2/teams/`**
+
+Returns all teams visible to the authenticated user. Results can be filtered by team name, organisation, or by a user's relationship to the team (member, manager, or pending request). Supports optional pagination.
+
+**Authentication:** Required
+
+**Query Parameters**
+
+<ParamField query="team_name" type="string">
+  Filter teams by name (partial match).
+</ParamField>
+
+<ParamField query="member" type="integer">
+  User ID — returns only teams where this user is an active member.
+</ParamField>
+
+<ParamField query="manager" type="integer">
+  User ID — returns only teams where this user holds the MANAGER role.
+</ParamField>
+
+<ParamField query="member_request" type="integer">
+  User ID — returns teams to which this user has submitted a pending join request.
+</ParamField>
+
+<ParamField query="team_role" type="string">
+  Filter by team role on a project (e.g. `MAPPER`, `VALIDATOR`, `PROJECT_MANAGER`).
+</ParamField>
+
+<ParamField query="organisation" type="integer">
+  Filter by organisation ID.
+</ParamField>
+
+<ParamField query="omitMemberList" type="boolean" default="false">
+  When `true`, the response omits the full members array.
+</ParamField>
+
+<ParamField query="fullMemberList" type="boolean" default="true">
+  When `false`, members are limited to 10 per role.
+</ParamField>
+
+<ParamField query="paginate" type="boolean" default="false">
+  Enable paginated results.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number when pagination is enabled.
+</ParamField>
+
+<ParamField query="perPage" type="integer" default="10">
+  Number of results per page when pagination is enabled.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "teams": [
+    {
+      "teamId": 42,
+      "name": "HOT Mappers",
+      "organisationId": 1,
+      "organisation": "Humanitarian OpenStreetMap Team",
+      "joinMethod": "BY_REQUEST",
+      "visibility": "PUBLIC",
+      "description": "General mapping team for HOT projects",
+      "members": [
+        {
+          "username": "jane_mapper",
+          "function": "MANAGER",
+          "active": true,
+          "pictureUrl": "https://example.com/avatar.jpg",
+          "joinedDate": "2024-01-15T10:00:00Z"
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "perPage": 10,
+    "total": 1,
+    "pages": 1
+  }
+}
+```
+
+---
+
+### Create a Team
+
+<br />
+
+**`POST /api/v2/teams/`**
+
+Creates a new team under an organisation. The authenticated user must be an admin or an organisation manager to create a team.
+
+**Authentication:** Required (admin or org manager)
+
+**Request Body**
+
+<ParamField body="name" type="string" required>
+  Display name for the team.
+</ParamField>
+
+<ParamField body="organisation_id" type="integer" required>
+  ID of the organisation this team belongs to.
+</ParamField>
+
+<ParamField body="description" type="string">
+  A short description of the team's purpose.
+</ParamField>
+
+<ParamField body="visibility" type="string" required>
+  Team visibility. One of `PUBLIC` or `PRIVATE`.
+</ParamField>
+
+<ParamField body="joinMethod" type="string" required>
+  How users can join the team. One of `ANY`, `BY_REQUEST`, or `BY_INVITE`.
+</ParamField>
+
+**Response** `201 Created`
+
+```json
+{ "teamId": 42 }
+```
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://tasking-manager-api.example.com/api/v2/teams/ \
+  -H "Authorization: Token YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "HOT Mappers",
+    "organisation_id": 1,
+    "description": "General purpose mapping team",
+    "visibility": "PUBLIC",
+    "joinMethod": "BY_REQUEST"
+  }'
+```
+</CodeGroup>
+
+<Warning>
+  Only users who are admins or managers of the specified organisation can create teams. A `403 Forbidden` response is returned if the user lacks permission.
+</Warning>
+
+---
+
+### Get Team by ID
+
+<br />
+
+**`GET /api/v2/teams/{team_id}/`**
+
+Retrieves full details for a single team, including its members list unless `omitMemberList=true` is passed.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  The unique numeric team ID.
+</ParamField>
+
+**Query Parameters**
+
+<ParamField query="omitMemberList" type="boolean" default="false">
+  Set to `true` to exclude member details from the response.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "teamId": 42,
+  "name": "HOT Mappers",
+  "organisationId": 1,
+  "organisation": "Humanitarian OpenStreetMap Team",
+  "joinMethod": "BY_REQUEST",
+  "visibility": "PUBLIC",
+  "description": "General purpose mapping team",
+  "members": [
+    {
+      "username": "jane_mapper",
+      "function": "MANAGER",
+      "active": true,
+      "joinRequestNotifications": false,
+      "pictureUrl": "https://example.com/avatar.jpg",
+      "joinedDate": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Update a Team
+
+<br />
+
+**`PATCH /api/v2/teams/{team_id}/`**
+
+Updates one or more fields of an existing team. The requesting user must be a team manager or an organisation admin.
+
+**Authentication:** Required (team manager or org admin)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  The unique numeric team ID.
+</ParamField>
+
+**Request Body** — all fields are optional
+
+<ParamField body="name" type="string">
+  New name for the team.
+</ParamField>
+
+<ParamField body="logo" type="string">
+  URL of a logo image.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="joinMethod" type="string">
+  One of `ANY`, `BY_REQUEST`, or `BY_INVITE`.
+</ParamField>
+
+<ParamField body="visibility" type="string">
+  One of `PUBLIC` or `PRIVATE`.
+</ParamField>
+
+<ParamField body="members" type="array">
+  Full replacement list of team members. Each item must include `username` and `function` (`MANAGER` or `MEMBER`).
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Status": "Updated" }
+```
+
+---
+
+### Delete a Team
+
+<br />
+
+**`DELETE /api/v2/teams/{team_id}/`**
+
+Permanently deletes a team. The team must not have any associated projects.
+
+**Authentication:** Required (team manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  The unique numeric team ID.
+</ParamField>
+
+**Response** `200 OK` — team deleted successfully.
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `401`  | Missing or invalid authentication token |
+| `403`  | User is not a team manager |
+| `404`  | Team not found |
+
+---
+
+## Team Actions
+
+### Request to Join a Team
+
+<br />
+
+**`POST /api/v2/teams/{team_id}/actions/join/`**
+
+Submits a join request for the authenticated user. Behaviour depends on the team's `joinMethod`: immediate membership for `ANY`, or a pending request for `BY_REQUEST`.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team to join.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Join request successful" }
+```
+
+---
+
+### Accept or Reject a Join Request
+
+<br />
+
+**`PATCH /api/v2/teams/{team_id}/actions/join/`**
+
+Allows a team manager to accept or reject a pending join request, or allows a user to respond to an invitation.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="username" type="string" required>
+  Username of the user whose request is being acted upon.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  The action type. Use `join-response` when a manager is acting on a join request, or `invite-response` when a user is responding to an invitation.
+</ParamField>
+
+<ParamField body="action" type="string" required>
+  Either `accept` or `reject`.
+</ParamField>
+
+<ParamField body="role" type="string" default="member">
+  The role to assign if accepting. One of `MANAGER` or `MEMBER`.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "True" }
+```
+
+<Note>
+  Only team managers can respond to `join-response` requests. Any authenticated user can respond to `invite-response` requests directed at them.
+</Note>
+
+---
+
+### Leave a Team
+
+<br />
+
+**`POST /api/v2/teams/{team_id}/actions/leave/`**
+
+Removes a user from the team. A team manager can remove any member; a regular member can only remove themselves.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="username" type="string" required>
+  Username of the member to remove.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "User removed from the team" }
+```
+
+---
+
+### Add a Member Directly
+
+<br />
+
+**`POST /api/v2/teams/{team_id}/actions/add/`**
+
+Allows a team manager to add a user directly without requiring a join request.
+
+**Authentication:** Required (team manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="username" type="string" required>
+  Username of the user to add.
+</ParamField>
+
+<ParamField body="role" type="string">
+  Role to assign: `MANAGER` or `MEMBER`. Defaults to `MEMBER` if omitted.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "User added to the team" }
+```
+
+---
+
+### Message All Team Members
+
+<br />
+
+**`POST /api/v2/teams/{team_id}/actions/message-members/`**
+
+Sends an in-app message to every active member of the team. The operation is dispatched as a background task.
+
+**Authentication:** Required (team manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="subject" type="string" required>
+  Subject line of the message.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  Body of the message. Must not be empty.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Message sent successfully" }
+```
+
+---
+
+### Download Join Requests (CSV)
+
+<br />
+
+**`GET /api/v2/teams/join_requests/`**
+
+Downloads a CSV file of users who have submitted join requests (inactive members) for a given team.
+
+**Authentication:** Required
+
+**Query Parameters**
+
+<ParamField query="team_id" type="integer" required>
+  ID of the team to query.
+</ParamField>
+
+**Response** — `text/csv` file with columns: `Username`, `Date Joined (UTC)`, `Team Name`.
+
+---
+
+## Project–Team Associations
+
+### List Teams for a Project
+
+<br />
+
+**`GET /api/v2/projects/{project_id}/teams/`**
+
+Returns all teams currently assigned to a project, including each team's role.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "teams": [
+    {
+      "teamId": 42,
+      "name": "HOT Mappers",
+      "role": "MAPPER"
+    }
+  ]
+}
+```
+
+---
+
+### Assign a Team to a Project
+
+<br />
+
+**`POST /api/v2/projects/{project_id}/teams/{team_id}/`**
+
+Assigns a team to a project with a specified role. The requesting user must be both a team manager and a project manager.
+
+**Authentication:** Required (team manager + project manager)
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team to assign.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="role" type="string" required>
+  The role for the team on this project. One of `MAPPER`, `VALIDATOR`, or `PROJECT_MANAGER`.
+</ParamField>
+
+**Response** `201 Created`
+
+```json
+{ "Success": "Team 42 assigned to project 7 with role MAPPER" }
+```
+
+---
+
+### Update a Team's Role on a Project
+
+<br />
+
+**`PATCH /api/v2/teams/{team_id}/projects/{project_id}/`**
+
+Changes the role of an already-assigned team on a project.
+
+**Authentication:** Required (project manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team.
+</ParamField>
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="role" type="string" required>
+  New role for the team. One of `MAPPER`, `VALIDATOR`, or `PROJECT_MANAGER`.
+</ParamField>
+
+**Response** `201`
+
+```json
+{ "Status": "Team role updated successfully." }
+```
+
+---
+
+### Remove a Team from a Project
+
+<br />
+
+**`DELETE /api/v2/projects/{project_id}/teams/{team_id}/`**
+
+Unlinks a team from a specific project. The caller must be a team manager.
+
+**Authentication:** Required (team manager)
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team to remove.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": true }
+```
+
+---
+
+### Unlink a Team from All Projects
+
+<br />
+
+**`DELETE /api/v2/teams/projects/teams/{team_id}/unlink`**
+
+Removes the specified team from every project it is currently assigned to. All unlinking operations are executed inside a single database transaction — if any check fails, no changes are committed.
+
+**Authentication:** Required (team manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team to unlink everywhere.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "Success": true,
+  "Message": "Team id-42 unlinked from projects: 7, 12, 15"
+}
+```
+
+---
+
+### Bulk Unlink Teams from Projects
+
+<br />
+
+**`DELETE /api/v2/teams/projects/unlink`**
+
+Accepts a list of project/team pairs and removes each assignment in a single atomic transaction. All permission checks run before any database write.
+
+**Authentication:** Required (team manager for every team in the list)
+
+**Request Body**
+
+<ParamField body="items" type="array" required>
+  Array of objects, each containing `project_id` (integer) and `team_id` (integer).
+</ParamField>
+
+```json
+{
+  "items": [
+    { "project_id": 7,  "team_id": 42 },
+    { "project_id": 12, "team_id": 42 }
+  ]
+}
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "Success": true,
+  "Message": "Unlinked teams: (project 7, team 42), (project 12, team 42)"
+}
+```
+
+---
+
+## Data Models
+
+**`TeamVisibility`** — `PUBLIC` | `PRIVATE`
+
+**`TeamJoinMethod`** — `ANY` | `BY_REQUEST` | `BY_INVITE`
+
+**`TeamMemberFunctions`** — `MANAGER` | `MEMBER`
+
+**`TeamRoles`** (project assignments) — `READ_ONLY` | `MAPPER` | `VALIDATOR` | `PROJECT_MANAGER`
+
+<Tip>
+  The `joinMethod` field controls who may enter the team. `ANY` grants immediate access on request; `BY_REQUEST` creates a pending entry that a manager must approve; `BY_INVITE` requires a manager to explicitly add the user.
+</Tip>

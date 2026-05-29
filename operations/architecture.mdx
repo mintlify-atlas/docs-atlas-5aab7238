@@ -1,0 +1,158 @@
+---
+title: "HOT Tasking Manager System Architecture"
+sidebarTitle: "Architecture"
+description: "Overview of Tasking Manager's AWS-based architecture: Auto Scaling Group, Application Load Balancer, RDS PostgreSQL, CloudFront CDN, and React S3 frontend."
+---
+
+HOT Tasking Manager is a three-tier web application: a React single-page application served from a CDN or static server, a FastAPI backend running on Python with an asyncpg database driver, and a PostgreSQL database with the PostGIS spatial extension. In HOT's production environment every tier is deployed on AWS and defined in a single CloudFormation template. For self-hosted deployments, Docker Compose orchestrates the equivalent services on a single host.
+
+<Note>
+  The full CloudFormation template is at [`scripts/aws/cloudformation/tasking-manager.template.js`](https://github.com/hotosm/tasking-manager/blob/develop/scripts/aws/cloudformation/tasking-manager.template.js) in the repository. Each resource described below corresponds to a named logical resource in that file.
+</Note>
+
+---
+
+## AWS Architecture
+
+HOT's production infrastructure runs entirely on AWS and is provisioned by a single CloudFormation stack. The diagram below shows how traffic flows from the user's browser through to the database.
+
+```
+Browser
+  │
+  ▼
+Route53 (tasks.hotosm.org)     Route53 (API subdomain)
+  │                                    │
+  ▼                                    ▼
+CloudFront (TaskingManagerReactCloudfront)
+  │                                    │
+  ▼                                    ▼
+S3 Bucket (TaskingManagerReactBucket)  ALB (TaskingManagerLoadBalancer)
+                                        │
+                                        ▼
+                              Auto Scaling Group (TaskingManagerASG)
+                              EC2 instances running FastAPI + uvicorn
+                                        │
+                                        ▼
+                               RDS PostgreSQL + PostGIS
+                               (TaskingManagerRDS)
+```
+
+### Compute — TaskingManagerASG
+
+`TaskingManagerASG` is the Auto Scaling Group that manages the EC2 instances running the backend API. A condition in the template determines the scaling tier based on the `AutoscalingPolicy` parameter:
+
+| Policy | Min Instances | Max Instances |
+|--------|--------------|--------------|
+| `development` | 1 | 1 |
+| `demo` | 1 | 3 |
+| `production` | 2 | 9 |
+
+`TaskingManagerLaunchConfiguration` contains the metadata files and startup commands executed when a new instance joins the group, including setting all Tasking Manager environment variables.
+
+`TaskingManagerEC2InstanceProfile` provides the instance with programmatic access to AWS services via its attached IAM role.
+
+### Auto-Scaling Policy — TaskingManagerScaleUp
+
+`TaskingManagerScaleUp` is a CloudWatch-based scaling policy that uses the `ALBRequestCountPerTarget` metric to trigger scale-out events. When the number of HTTP requests per backend instance exceeds the configured threshold, the ASG adds a new EC2 instance.
+
+### Load Balancer — TaskingManagerLoadBalancer
+
+`TaskingManagerLoadBalancer` is an Application Load Balancer (ALB) that distributes incoming HTTPS traffic across all healthy instances in the ASG.
+
+- **`TaskingManagerLoadBalancerHTTPListener`** — listens on port 80 and immediately redirects all requests to HTTPS.
+- **`TaskingManagerLoadBalancerHTTPSListener`** — listens on port 443, terminates TLS using the certificate identified by `SSLCertificateIdentifier`, and forwards requests to the target group.
+- **`TaskingManagerLoadBalancerRoute53`** — Route53 alias record pointing to the ALB.
+
+### Target Group — TaskingManagerTargetGroup
+
+`TaskingManagerTargetGroup` registers backend instances with the ALB and configures HTTP health checks. Instances that fail health checks are removed from rotation until they recover.
+
+### Database — TaskingManagerRDS
+
+`TaskingManagerRDS` is an Amazon RDS instance running PostgreSQL with PostGIS. Key configuration parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `DatabaseEngineVersion` | `13.10` | AWS PostgreSQL engine version |
+| `DatabaseInstanceType` | `db.t3.xlarge` | RDS instance class |
+| `DatabaseDiskSize` | `100` | Disk size in GB (100 GB minimum recommended for better IOPS) |
+| `DatabaseSnapshotRetentionPeriod` | `10` | Automatic snapshot retention in days |
+| `DatabaseParameterGroupName` | `tm3-logging-postgres11` | Parameter group for database configuration |
+
+An optional `DBSnapshot` parameter allows the database to be restored from an existing RDS snapshot, and `DatabaseDump` allows initialisation from a plaintext SQL dump stored on S3.
+
+### Frontend — TaskingManagerReactBucket and TaskingManagerReactCloudfront
+
+`TaskingManagerReactBucket` is the S3 bucket storing the compiled React application assets. `TaskingManagerReactBucketPolicy` grants public read access to the objects. `TaskingManagerReactCloudfront` is a CloudFront distribution that serves the static assets with global edge caching and HTTPS.
+
+### DNS — TaskingManagerRoute53
+
+`TaskingManagerRoute53` creates the Route53 DNS record for the frontend, resolving to the CloudFront distribution (e.g. `tasks.hotosm.org`). A separate `TaskingManagerLoadBalancerRoute53` record resolves to the ALB for the backend API.
+
+### IAM Roles
+
+| Role | Purpose |
+|------|---------|
+| `TaskingManagerEC2Role` | Grants backend EC2 instances access to CodeDeploy (for deployments), CloudWatch (for monitoring metrics and logs), CloudFormation (for stack introspection), and RDS. |
+| `TaskingManagerDatabaseDumpAccessRole` | A specialised EC2 role used only when a `DatabaseDump` S3 path is provided at stack creation, allowing the instance to read the dump file from S3. |
+
+---
+
+## Self-Hosted (Docker Compose) Architecture
+
+For self-hosted deployments without AWS, Docker Compose provides an equivalent multi-container setup on a single host. All services communicate over a dedicated Docker network (`tm-net`), with Traefik acting as the reverse proxy.
+
+```
+Host port 3000
+    │
+    ▼
+Traefik v3.6.1
+    ├── /api/* ──► tm-backend (FastAPI, port 5000)
+    └── /* ──────► tm-frontend (React, port 3000)
+
+tm-backend
+    └── depends on tm-db (healthy) + tm-migration (completed)
+
+tm-migration (Alembic, runs once at startup)
+    └── depends on tm-db (healthy)
+
+tm-cron-jobs (background tasks)
+    └── depends on tm-db (healthy)
+
+tm-db (PostGIS 14-3.3)
+```
+
+### Container Summary
+
+| Service | Image | Role |
+|---------|-------|------|
+| `traefik` | `traefik:v3.6.1` | Reverse proxy; routes `/api/` to backend, everything else to frontend |
+| `tm-frontend` | `ghcr.io/hotosm/tasking-manager/frontend:main` | Compiled React SPA served on port 3000 |
+| `tm-backend` | `ghcr.io/hotosm/tasking-manager/backend:main` | FastAPI application served by uvicorn on port 5000 |
+| `tm-migration` | `ghcr.io/hotosm/tasking-manager/backend:main` | Runs `alembic upgrade head` then exits |
+| `tm-cron-jobs` | `ghcr.io/hotosm/tasking-manager/backend:main` | Executes `backend/cron_jobs.py` for scheduled tasks |
+| `tm-db` | `postgis/postgis:14-3.3` | PostgreSQL 14 with PostGIS 3.3 |
+
+### API Server
+
+The backend runs FastAPI with uvicorn as the ASGI server. In production containers the command is:
+
+```bash
+uvicorn backend.main:api \
+  --host 0.0.0.0 \
+  --port 5000 \
+  --workers 8 \
+  --log-level critical \
+  --no-access-log
+```
+
+Database connections use the `asyncpg` driver through SQLAlchemy's async engine, with a configurable connection pool (`DB_MIN_CONNECTIONS` defaulting to 4, `DB_MAX_CONNECTIONS` defaulting to 8).
+
+### Key Ports
+
+| Port | Service | Notes |
+|------|---------|-------|
+| `3000` | Frontend (via Traefik) | Main entry point; also proxies `/api/` to backend |
+| `5000` | Backend API (internal) | Direct access in development; behind Traefik in standard compose |
+| `5432` | PostgreSQL (internal) | Exposed as `5433` on the host in the override sample file |
+| `5678` | DebugPy | Python debugger; only active in the `debug` build target |

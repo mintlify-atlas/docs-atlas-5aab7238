@@ -1,0 +1,218 @@
+---
+title: "Submit and Review Pull Requests for Tasking Manager"
+sidebarTitle: "Pull Requests"
+description: "Guidelines for submitting well-scoped pull requests and for reviewing others' contributions to HOT Tasking Manager on GitHub."
+---
+
+Pull requests are the primary mechanism through which code changes enter the Tasking Manager codebase. Whether you are fixing a one-line typo or delivering a multi-week feature, the same principles apply: keep changes focused, write tests, and communicate clearly with reviewers. This guide walks through the full lifecycle of a PR — from forking the repository to seeing your work merged and deployed.
+
+## Submitting a Pull Request
+
+<Steps>
+  <Step title="Fork and branch from develop">
+    Fork the [tasking-manager repository](https://github.com/hotosm/tasking-manager) on GitHub and clone your fork locally. Always branch from `develop` — it is the trunk branch and where all reviewed work lands.
+
+    ```bash
+    git checkout develop
+    git pull origin develop
+    git checkout -b feature/123-add-my-improvement
+    ```
+
+    Follow the git-flow naming convention for your branch:
+
+    | Branch type | Pattern | When to use |
+    |---|---|---|
+    | `feature/` | `feature/ISSUE-short-title` | New functionality |
+    | `bugfix/` | `bugfix/ISSUE-short-title` | Non-critical fixes for the next release |
+    | `hotfix/` | `hotfix/ISSUE-short-title` | Emergency fixes that must ship immediately |
+  </Step>
+
+  <Step title="Write your code and commit">
+    Keep commits focused and cohesive. Split large changes into smaller logical units and use meaningful commit messages:
+
+    ```
+    Fix task lock expiry not resetting mapper count
+
+    When a task lock expired without an explicit unlock action, the
+    per-project mapper count was never decremented. This commit adds
+    a cleanup step in the expiry handler to correct the count.
+    ```
+
+    A good commit message has:
+    - A one-line summary starting with a capital letter (imperative mood preferred)
+    - A blank line followed by a detailed body for non-trivial changes
+
+    <Tip>
+      If you have introduced new translatable strings in the frontend, update the source locale file before committing by running `yarn build-locales` inside the `frontend/` directory.
+    </Tip>
+  </Step>
+
+  <Step title="Format your code">
+    Run the appropriate formatter before pushing. Unformatted code will fail CI checks.
+
+    **Backend (Python):**
+
+    ```bash
+    # Format with Black
+    black manage.py backend tests migrations
+    # or using uv
+    uv run lint
+
+    # Check with Flake8
+    flake8 manage.py backend tests migrations
+    # or using uv
+    uv run flake8
+    ```
+
+    **Frontend (JavaScript / JSX):**
+
+    ```bash
+    # From the frontend/ directory
+    yarn prettier
+    ```
+
+    <Tip>
+      You can automate formatting on every commit by installing a git pre-commit hook that runs Black on Python files and Prettier on JS/JSX files automatically before each commit.
+    </Tip>
+  </Step>
+
+  <Step title="Run the test suites">
+    All tests must pass before you open a PR. Failing tests block the CI pipeline and will prevent your PR from being merged.
+
+    **Backend tests:**
+
+    ```bash
+    # Run all backend tests
+    python3 -m unittest discover tests/backend
+
+    # Run a specific test file
+    python -m unittest tests/backend/integration/services/test_license_service.py
+
+    # Alternative using uv
+    uv run test
+    ```
+
+    **Frontend tests:**
+
+    ```bash
+    # From the frontend/ directory
+    yarn test
+    ```
+
+    <Note>
+      Whenever you add a new API endpoint to the backend, add a corresponding test case for it. For frontend changes, consider adding tests for non-trivial logic paths.
+    </Note>
+  </Step>
+
+  <Step title="Open the pull request on GitHub">
+    Push your branch to your fork and open a PR against the `hotosm/tasking-manager` `develop` branch. In the PR description:
+
+    - **Reference the GitHub issue** — e.g., `Closes #1234` or `Relates to #1234`
+    - **Describe what changed and why**, not just what files were modified
+    - **Provide testing instructions** — list the exact steps a reviewer needs to reproduce and verify the change
+    - **Highlight preconditions** — e.g., specific account permissions, feature flags, or seed data required
+    - **Note any new environment variables** if your change adds or modifies configuration
+
+    Keep the PR tightly scoped to a single concern. It is always better to open multiple focused PRs than one large PR that mixes unrelated changes.
+
+    <Warning>
+      Avoid leaving a PR in draft mode for extended periods. A draft PR that sits idle for more than a short time risks being deprioritised or overlooked by reviewers.
+    </Warning>
+  </Step>
+
+  <Step title="Keep your branch up to date">
+    While your PR is under review, rebase it regularly against the latest `develop` to avoid merge conflicts and to incorporate any updates reviewers may have requested:
+
+    ```bash
+    git fetch origin
+    git rebase origin/develop
+    git push --force-with-lease
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Reviewing a Pull Request
+
+All team members — and community contributors — are encouraged to review open PRs. A best practice is to pair a code-focused reviewer with someone who tests behaviour and UX end-to-end.
+
+<Steps>
+  <Step title="Check Continuous Integration results">
+    Before diving into the code, confirm that the automated CI pipeline has passed. If any checks have failed, leave a comment on the PR asking the author to investigate the error before the review continues.
+  </Step>
+
+  <Step title="Review the code">
+    Examine the diff on the GitHub PR page. For larger PRs, check out the branch locally to run it:
+
+    ```bash
+    git checkout BRANCHNAME
+
+    # Review differences against develop
+    git diff BRANCHNAME..develop
+    ```
+
+    When reviewing, consider the following criteria:
+
+    - **Code quality** — Is the logic correct, readable, and well-structured?
+    - **Comments** — Are complex or non-obvious sections explained? Do existing comments remain accurate?
+    - **Tests** — Are there unit tests for new backend functionality? Do they cover edge cases?
+    - **Typos and formatting** — Consistent style helps long-term maintainability.
+    - **Documentation** — Are new environment variables documented? Are API changes noted?
+
+    Leave inline comments on the PR page for specific lines. If an issue must be resolved before merging, use the **Request Changes** review action — do not approve until all blocking items are addressed.
+
+    <Tip>
+      Keep review feedback constructive and kind. We are all here to improve the project together. Refer to the [HOT Code of Conduct](https://www.hotosm.org/code-of-conduct) when in doubt about tone.
+    </Tip>
+  </Step>
+
+  <Step title="Test on the staging instance">
+    Once the CI is green and the code looks good, verify the behaviour on the [Tasking Manager Staging site](https://tasks-stage.hotosm.org). Merges to `develop` are automatically deployed there.
+
+    Work through the change checklist that is relevant to the PR:
+
+    - **Frontend changes** — Walk through the affected screens both logged in and logged out.
+    - **API changes** — Poll the live API docs at `/api-docs` to confirm endpoint behaviour.
+    - **Messaging changes** — Test with two separate accounts in two browsers (e.g., one in private/incognito mode).
+    - **Task workflow changes** — Check out a task for mapping, unlock it, mark it done, validate it, and invalidate it.
+    - **Task commenting changes** — Comment on a task in each state (unchecked-out, checked out for mapping, checked out for validation).
+
+    If anything looks wrong, comment on the PR — do not approve yet.
+  </Step>
+
+  <Step title="Approve and merge">
+    Once all issues are resolved and the staging test looks good, submit an **Approved** review on GitHub. When the required number of approvals is reached, click **Merge pull request** on the GitHub PR page.
+
+    After merging, delete the PR branch to keep the repository tidy:
+
+    ```bash
+    git push origin --delete BRANCHNAME
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Versions and Releases
+
+<Accordion title="Major releases (~every 6 weeks)">
+Major releases increment the second version digit (e.g., `5.1.0` → `5.2.0`) and follow a structured process:
+
+1. After approximately four weeks, the team coordinates a **feature freeze** — some flexibility is allowed to finish in-flight work.
+2. `develop` is frozen for one week. No new feature branches may be merged during this window.
+3. A Pull Request from `develop` to `master` is opened and reviewed, including release notes.
+4. The `@hotosm/software-testers` group is pinged to conduct extensive testing on [tasks-stage.hotosm.org](https://tasks-stage.hotosm.org).
+5. **Two code reviews** from core contributors are required for approval.
+6. After one week of positive feedback, the PR is merged into `master`.
+7. `develop` is rebased on `master` and a release tag is created from `master`.
+</Accordion>
+
+<Accordion title="Minor / hotfix releases (emergency)">
+Minor releases increment the third version digit (e.g., `5.2.0` → `5.2.1`) and are reserved for critical bug fixes only. Only `hotfix/` branches may be applied.
+
+1. A Pull Request is opened from the `hotfix/` branch to `master`, including brief release notes.
+2. **Two code reviews** from core contributors are required for approval.
+3. The PR is merged into both `master` **and** `develop`.
+4. `develop` is rebased on `master` and a release tag is created from `master`.
+</Accordion>

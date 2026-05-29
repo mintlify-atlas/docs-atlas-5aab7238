@@ -1,0 +1,174 @@
+---
+title: "User Roles and Permissions in Tasking Manager"
+sidebarTitle: "Roles & Permissions"
+description: "HOT Tasking Manager uses role-based access control to govern who can map, validate, manage projects, and administer organisations."
+---
+
+HOT Tasking Manager implements a layered permission model. At the broadest level, every user account carries a **global role** stored in the `users.role` column. Beneath that, organisations grant **manager access** to specific users, and teams assigned to projects determine **project-level mapping and validation permissions**. Additionally, a separate **mapper level** (distinct from role) tracks a user's OSM experience and gates access to projects by difficulty. Understanding how these layers interact is key to administering a Tasking Manager instance or managing a mapping campaign.
+
+## Global User Roles
+
+The `UserRole` enum (from `backend/models/postgis/statuses.py`) defines the three possible system-wide roles:
+
+| Role | Integer Value | Description |
+|---|---|---|
+| `READ_ONLY` | `-1` | Account is blocked; user can browse but cannot lock tasks or contribute |
+| `MAPPER` | `0` | Standard contributor account; assigned to all new sign-ins by default |
+| `ADMIN` | `1` | Full system access including user management and all project operations |
+
+<Note>
+The Tasking Manager codebase also references `PROJECT_MANAGER` and `VALIDATOR` as role names in certain API messages and service error strings (e.g., `"accepted values are ADMIN, PROJECT_MANAGER, VALIDATOR"`). However, these are **not stored as distinct values** in the `UserRole` enum or the `users.role` column. Project manager and validator capabilities are granted through **team membership** on specific projects, not through a global role assignment.
+</Note>
+
+### Assigning the Admin Role
+
+New users who sign in via OpenStreetMap OAuth start with `role = 0` (`MAPPER`). The only way to grant `ADMIN` status is directly in the database:
+
+```sql
+UPDATE users SET role = 1 WHERE username = '<osm_username>';
+```
+
+<Note>
+Run this command against your Tasking Manager PostgreSQL database after the user has logged in at least once (so their account row exists):
+
+```bash
+psql -d <your_database> -c "UPDATE users SET role = 1 WHERE username = '<your_osm_username>';"
+```
+
+Only existing admins can grant the admin role to another user through the API (`POST /users/{username}/actions/set-role/`).
+</Note>
+
+### Blocking a User
+
+Setting `role = -1` (`READ_ONLY`) blocks a user. They remain able to browse projects and view public pages but cannot lock any tasks for mapping or validation. The `UserService.is_user_blocked()` method checks for this status on every protected action.
+
+## What Each Global Role Can Do
+
+<Accordion title="MAPPER (role = 0) — default for all new users">
+  - Browse and search all published, non-private projects
+  - Lock a task for mapping (`POST /projects/{id}/tasks/actions/lock-for-mapping/{task_id}/`)
+  - Submit a mapped task or mark it as `BADIMAGERY`
+  - Stop mapping and release a lock without changes
+  - Add comments to tasks
+  - Undo their own last mapping action
+  - View their mapping history and statistics
+  - Join teams (subject to team join method: `ANY`, `BY_REQUEST`, or `BY_INVITE`)
+</Accordion>
+
+<Accordion title="ADMIN (role = 1) — full system access">
+  All mapper capabilities, plus:
+
+  - Create, update, publish, and archive **any** project regardless of organisation
+  - Manage all organisations (create, update, delete)
+  - Manage all teams (create, update, delete, add/remove members)
+  - Assign global roles to other users via the API
+  - Validate tasks mapped by any user (including their own)
+  - Access project management dashboards across all organisations
+  - Reset, invalidate, or validate tasks in bulk
+  - View and manage system banners and announcements
+  - Access private projects without being on the allowed user list
+</Accordion>
+
+<Accordion title="READ_ONLY (role = -1) — blocked account">
+  - Browse published project listings (read-only)
+  - Cannot lock tasks, submit mapping, comment, or perform any write operation
+  - Blocked accounts receive an error response from all protected endpoints
+</Accordion>
+
+## Organisation-Level Access
+
+Organisation manager status is stored in the `organisation_managers` join table and is scoped to a specific organisation — it is not a global role.
+
+| Capability | Organisation Manager | Admin |
+|---|---|---|
+| Create projects under this organisation | ✅ | ✅ |
+| Publish and archive projects | ✅ | ✅ |
+| Create and manage teams within this organisation | ✅ | ✅ |
+| Create campaigns linked to this organisation | ✅ | ✅ |
+| Update organisation settings (name, logo, type) | ✅ | ✅ |
+| Delete the organisation | ❌ | ✅ |
+| Manage other organisations | ❌ | ✅ |
+
+An organisation manager is identified by the `OrganisationService.is_user_an_org_manager()` method, which queries `organisation_managers` for the combination of `organisation_id` and `user_id`.
+
+## Team-Level Roles on Projects
+
+When a team is assigned to a project, it is given a role from the `TeamRoles` enum. This determines what team members can do on that specific project:
+
+| Team Role | Value | Capability |
+|---|---|---|
+| `MAPPER` | `0` | Team members can lock tasks for mapping |
+| `VALIDATOR` | `1` | Team members can lock tasks for validation |
+| `PROJECT_MANAGER` | `2` | Team members can edit project settings and publish |
+
+These roles are stored in the `project_teams` table (`team_id`, `project_id`, `role`). A single team can hold multiple roles on the same project.
+
+### Mapping Permission Modes
+
+The `MappingPermission` enum on a project controls who can map:
+
+| Value | Behaviour |
+|---|---|
+| `ANY` (0) | Any logged-in user with a sufficient mapper level may map |
+| `TEAMS` (2) | Only members of teams assigned the `MAPPER` role may map |
+
+### Validation Permission Modes
+
+The `ValidationPermission` enum mirrors the same logic for validation:
+
+| Value | Behaviour |
+|---|---|
+| `ANY` (0) | Any user who qualifies as a validator (Admin or permitted user) may validate |
+| `TEAMS` (2) | Only members of teams assigned the `VALIDATOR` role may validate |
+
+## Team Membership Functions
+
+Within a team, each member holds one of two functions from the `TeamMemberFunctions` enum:
+
+| Function | Value | Capability |
+|---|---|---|
+| `MANAGER` | `1` | Approve or reject join requests, invite users, update team settings, remove members |
+| `MEMBER` | `2` | Participate in projects the team is assigned to (map or validate based on team role) |
+
+The creator of a team is automatically assigned the `MANAGER` function.
+
+## Mapper Level (Not a Role)
+
+Mapper level is a separate dimension from global role. It represents a user's OSM mapping experience and is used to gate access to projects by difficulty. Levels are stored in the `mapping_levels` table and assigned to users via the `users.mapping_level` foreign key.
+
+The default configuration uses three levels — Beginner, Intermediate, and Advanced — with thresholds based on OSM changeset counts:
+
+| Level | Changeset Threshold |
+|---|---|
+| Beginner | Below `TM_MAPPER_LEVEL_INTERMEDIATE` (default: **250**) |
+| Intermediate | From 250 to below `TM_MAPPER_LEVEL_ADVANCED` (default: **500**) |
+| Advanced | 500 or more changesets |
+
+Mapper levels are updated automatically when a user unlocks a task (`UserService.check_and_update_mapper_level()`). They can also be set manually by admins via `POST /users/{username}/actions/set-level/`.
+
+<Note>
+Mapper level does **not** affect a user's ability to validate. Validation access is controlled by team membership and the project's `ValidationPermission` setting.
+</Note>
+
+## Permissions Matrix Summary
+
+| Action | READ_ONLY | MAPPER | Org Manager | ADMIN |
+|---|---|---|---|---|
+| Browse public projects | ✅ | ✅ | ✅ | ✅ |
+| Lock task for mapping | ❌ | ✅ (if permitted) | ✅ | ✅ |
+| Submit mapped / badimagery task | ❌ | ✅ | ✅ | ✅ |
+| Lock task for validation | ❌ | ✅ (if permitted) | ✅ | ✅ |
+| Mark task VALIDATED / INVALIDATED | ❌ | ✅ (if permitted) | ✅ | ✅ |
+| Create a project | ❌ | ❌ | ✅ (own org) | ✅ |
+| Publish a project | ❌ | ❌ | ✅ (own org) | ✅ |
+| Create / manage teams | ❌ | ❌ | ✅ (own org) | ✅ |
+| Create campaigns | ❌ | ❌ | ✅ (own org) | ✅ |
+| Assign global roles to users | ❌ | ❌ | ❌ | ✅ |
+| Manage all organisations | ❌ | ❌ | ❌ | ✅ |
+| Access private projects | ❌ | ❌ (unless allowed) | ✅ (own org) | ✅ |
+
+## Related Topics
+
+- [Teams and Organisations](/concepts/teams-and-organisations) — Detailed structure of teams, orgs, and campaigns
+- [Projects and Tasks](/concepts/projects-and-tasks) — How mapping and validation permissions apply to tasks
+- [Mapping Workflow](/concepts/mapping-workflow) — Step-by-step flow for mappers and validators

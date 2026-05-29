@@ -1,0 +1,326 @@
+---
+title: "Development Environment Setup for Tasking Manager"
+sidebarTitle: "Dev Setup"
+description: "Configure the HOT Tasking Manager frontend (React) and backend (FastAPI + PostGIS) for local development, with Docker or standalone."
+---
+
+HOT Tasking Manager is composed of two independently developed components: a **React frontend** that provides the mapping interface and project management UI, and a **FastAPI + PostgreSQL/PostGIS backend** that exposes a versioned REST API. You can work on either component in isolation — the frontend can be pointed at the HOT staging API, and the backend can be exercised directly through its Swagger UI — or you can run the full stack locally using Docker Compose.
+
+## OSM OAuth2 Setup
+
+Tasking Manager delegates all user authentication to OpenStreetMap's OAuth 2.0 system. Before configuring any environment, you need OAuth2 credentials from openstreetmap.org.
+
+1. **Log in** to [openstreetmap.org](https://www.openstreetmap.org/login). If you do not have an account, create one at [openstreetmap.org/user/new](https://www.openstreetmap.org/user/new).
+2. Open the dropdown on the top-right of the navigation bar and select **My Settings**.
+3. Navigate to **OAuth 2 applications** and click **Register new application**.
+4. Configure the application:
+   - **Redirect URI**: `http://127.0.0.1:3000/authorized`
+   - **Permissions**: `read_prefs` (Read user preferences) and `write_api` (Modify the map)
+5. Save the form and note down your **Client ID** and **Client Secret**.
+
+<Warning>
+  Use `http://127.0.0.1:3000/authorized` as the redirect URI, **not** `http://localhost:3000/authorized`. OpenStreetMap's OAuth2 implementation requires the literal IP address `127.0.0.1` for local development environments. Using `localhost` will cause authentication to fail.
+</Warning>
+
+## Configure the Environment File
+
+The repository includes a fully-documented `example.env` that serves as the starting point for any deployment. Copy it to `tasking-manager.env` in the repository root:
+
+```bash
+cp example.env tasking-manager.env
+```
+
+Open `tasking-manager.env` and set the following variables at minimum. The full list of available variables is described in the [operations configuration reference](/operations/configuration).
+
+| Variable | Description | Example |
+|---|---|---|
+| `TM_APP_BASE_URL` | Public URL of the frontend (used in email links and OAuth callbacks) | `http://127.0.0.1:3000` |
+| `TM_CLIENT_ID` | OAuth2 Client ID from openstreetmap.org | `abc123` |
+| `TM_CLIENT_SECRET` | OAuth2 Client Secret from openstreetmap.org | `s3cr3t` |
+| `TM_REDIRECT_URI` | Must match the URI registered on OSM | `http://127.0.0.1:3000/authorized` |
+| `TM_SCOPE` | OAuth2 permission scopes | `read_prefs write_api` |
+| `TM_SECRET` | Freely-defined secret shared between frontend and backend | `any-long-random-string` |
+| `POSTGRES_DB` | Database name | `tasking-manager` |
+| `POSTGRES_USER` | Database user | `tm` |
+| `POSTGRES_PASSWORD` | Database password | `tm` |
+| `POSTGRES_ENDPOINT` | Database host (use Docker service name or IP for standalone) | `tm-db` |
+| `POSTGRES_PORT` | Database port | `5432` |
+
+A minimal working configuration for local development looks like:
+
+```dotenv
+TM_APP_BASE_URL=http://127.0.0.1:3000
+TM_CLIENT_ID=<your-client-id>
+TM_CLIENT_SECRET=<your-client-secret>
+TM_REDIRECT_URI=http://127.0.0.1:3000/authorized
+TM_SCOPE=read_prefs write_api
+TM_SECRET=replacethiswithalongrandomstring
+
+POSTGRES_DB=tasking-manager
+POSTGRES_USER=tm
+POSTGRES_PASSWORD=tm
+POSTGRES_ENDPOINT=tm-db
+POSTGRES_PORT=5432
+```
+
+## Running the Stack
+
+<Tabs>
+  <Tab title="Docker">
+    Docker Compose is the recommended way to run the full Tasking Manager stack for development. It brings up the PostGIS database, runs database migrations, starts the FastAPI backend, the React frontend, cron jobs, and the Traefik reverse proxy — all wired together automatically.
+
+    ### Requirements
+
+    Install [Docker Engine](https://docs.docker.com/engine/install/) (Docker Compose v2 is bundled).
+
+    ### Start All Services
+
+    <Steps>
+      <Step title="Copy and configure the env file">
+        ```bash
+        cp example.env tasking-manager.env
+        # Edit tasking-manager.env — set TM_CLIENT_ID, TM_CLIENT_SECRET at minimum
+        ```
+      </Step>
+
+      <Step title="Bring up the full stack">
+        ```bash
+        docker compose --env-file tasking-manager.env up -d
+        ```
+
+        The `tm-migration` service runs Alembic migrations against the database before `tm-backend` starts. Docker Compose healthchecks ensure correct startup ordering.
+      </Step>
+
+      <Step title="Open the application">
+        The Tasking Manager frontend is available at:
+
+        ```text
+        http://127.0.0.1:3000
+        ```
+
+        The backend API docs are served at:
+
+        ```text
+        http://127.0.0.1:5000/api/docs
+        ```
+      </Step>
+
+      <Step title="(Optional) Change the default port">
+        The default frontend port is `3000`, routed through Traefik. To use a different port, pass `TM_DEV_PORT` before the compose command:
+
+        ```bash
+        TM_DEV_PORT=9000 docker compose --env-file tasking-manager.env up -d
+        ```
+
+        <Warning>
+          If you change the port you must also update `TM_APP_BASE_URL` in your env file and update the **Redirect URI** in your OSM OAuth2 application to match the new port.
+        </Warning>
+      </Step>
+
+      <Step title="(Optional) Override Docker Compose configuration">
+        To add custom service configuration (resource limits, volume mounts for live frontend reload, etc.) without modifying the tracked `docker-compose.yml`, create an override file from the included sample:
+
+        ```bash
+        cp docker-compose.override.sample.yml docker-compose.override.yml
+        # Edit docker-compose.override.yml as needed
+        ```
+
+        Docker Compose automatically merges `docker-compose.override.yml` when present.
+      </Step>
+
+      <Step title="(Optional) Use an external database">
+        If you want to connect to an existing PostgreSQL/PostGIS server (self-hosted or cloud-managed) instead of the containerised `tm-db` service, update these variables in `tasking-manager.env`:
+
+        ```dotenv
+        POSTGRES_DB=tasking-manager
+        POSTGRES_USER=tm
+        POSTGRES_PASSWORD=your-password
+        POSTGRES_ENDPOINT=192.168.1.100   # Your database host IP
+        POSTGRES_PORT=5432
+        ```
+
+        <Note>
+          If your database runs on your local machine (not inside Docker), use your machine's LAN IP address rather than `localhost` — the `tm-backend` container cannot reach the host via `localhost`.
+        </Note>
+
+        Then recreate the containers:
+
+        ```bash
+        docker compose --env-file tasking-manager.env up -d
+        ```
+      </Step>
+
+      <Step title="(Optional) Frontend-only deployment">
+        If you only want to run the frontend against a remote backend (e.g. the HOT staging API), set `TM_APP_API_URL` in your env file:
+
+        ```dotenv
+        TM_APP_API_URL=https://tasking-manager-staging-api.hotosm.org
+        ```
+
+        Then start only the frontend service:
+
+        ```bash
+        docker compose --env-file tasking-manager.env up -d tm-frontend
+        ```
+
+        Follow the frontend logs to confirm a successful build:
+
+        ```bash
+        docker logs tasking-manager-main-tm-frontend-1 -f
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Standalone">
+    You can run the frontend and backend as standalone processes outside Docker. This gives you the fastest feedback loop for active code changes.
+
+    ### Frontend (React)
+
+    #### Dependencies
+
+    - [Node.js LTS v12+](https://nodejs.org/en/) — check with `node --version`
+    - [Yarn](https://classic.yarnpkg.com/en/docs/install) — check with `yarn --version`
+
+    Install frontend dependencies:
+
+    ```bash
+    cd frontend
+    yarn
+    ```
+
+    #### Available Scripts
+
+    Run all commands from inside the `frontend/` directory.
+
+    <CodeGroup>
+      ```bash Start Dev Server
+      yarn start
+      # Opens http://localhost:3000 with hot reload
+      ```
+
+      ```bash Run Tests
+      yarn test
+      # Launches the interactive test watcher
+      ```
+
+      ```bash Production Build
+      yarn build
+      # Outputs optimised static assets to frontend/build/
+      ```
+    </CodeGroup>
+
+    To point the frontend at your local backend, set `TM_APP_API_URL` before starting:
+
+    ```bash
+    TM_APP_API_URL=http://127.0.0.1:5000/api yarn start
+    ```
+
+    Or update the variable in `tasking-manager.env` at the repository root before running yarn.
+
+    ### Backend (FastAPI)
+
+    #### Dependencies
+
+    - [Python 3.9–3.11](https://www.python.org/downloads/) (see `requires-python` in `pyproject.toml`)
+    - [PostgreSQL](https://www.postgresql.org/download/) with the [PostGIS](https://postgis.net/install/) extension
+    - [libgeos-dev](https://trac.osgeo.org/geos/) (required by Shapely)
+
+    #### Install Python Dependencies
+
+    The project uses [uv](https://github.com/astral-sh/uv) for fast, reproducible dependency management:
+
+    ```bash
+    pip install --upgrade uv
+    uv sync
+    ```
+
+    #### Run the Backend
+
+    ```bash
+    uv run start
+    ```
+
+    The API server starts on port `5000`. Interactive docs are available at:
+
+    ```text
+    http://localhost:5000/api/docs
+    ```
+
+    #### Run Tests
+
+    ```bash
+    uv run test
+    # or
+    python3 -m unittest discover tests/backend
+    ```
+
+    ### Database Migrations
+
+    After setting up a PostgreSQL/PostGIS database and configuring the connection variables in `tasking-manager.env`, apply all Alembic migrations:
+
+    ```bash
+    uv run upgrade
+    ```
+
+    #### Create the PostGIS Database (without Docker)
+
+    If you need to create a local database from scratch:
+
+    ```sql
+    -- Run as the postgres superuser
+    CREATE USER "tm" PASSWORD 'tm';
+    CREATE DATABASE "tasking-manager" OWNER "tm";
+    \c "tasking-manager"
+    CREATE EXTENSION postgis;
+    ```
+
+    #### Grant Admin Permissions
+
+    After logging in to your local instance at least once (to populate your user record), promote your OSM account to admin so you can create projects and access management views:
+
+    ```bash
+    psql -d tasking-manager \
+      -c "UPDATE users SET role = 1 WHERE username = '<your_osm_username>'"
+    ```
+  </Tab>
+</Tabs>
+
+## API Access
+
+When the backend is running (either via Docker or standalone), the full API is accessible at `http://localhost:5000` (standalone) or proxied through Traefik at `http://127.0.0.1:5000` (Docker). The Swagger UI at `/api/docs` documents every endpoint, shows request/response schemas, and supports authenticated test calls.
+
+To authenticate in Swagger UI:
+
+1. Log in via the browser frontend to create your user session.
+2. Open your profile settings, enable **Expert Mode**, and copy the **API Key**.
+3. In the Swagger UI, click **Authorize** and enter `Token <your-api-key>`.
+
+Authenticated `curl` requests use the same format:
+
+```bash
+curl http://localhost:5000/api/v2/projects/ \
+  -H "Authorization: Token <your-api-key>"
+```
+
+## Key Environment Variables Reference
+
+Below is a summary of the most important variables. For the complete reference, see the [operations configuration guide](/operations/configuration).
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TM_APP_BASE_URL` | Yes | `http://127.0.0.1:3000` | Public URL of the frontend |
+| `TM_CLIENT_ID` | Yes | — | OSM OAuth2 Client ID |
+| `TM_CLIENT_SECRET` | Yes | — | OSM OAuth2 Client Secret |
+| `TM_REDIRECT_URI` | Yes | `http://127.0.0.1:3000/authorized` | OAuth2 redirect URI (must match OSM registration) |
+| `TM_SCOPE` | Yes | `read_prefs write_api` | OAuth2 permission scopes |
+| `TM_SECRET` | Yes | — | Shared secret between frontend and backend |
+| `POSTGRES_DB` | Yes | `tasking-manager` | PostgreSQL database name |
+| `POSTGRES_USER` | Yes | `tm` | PostgreSQL user |
+| `POSTGRES_PASSWORD` | Yes | `tm` | PostgreSQL password |
+| `POSTGRES_ENDPOINT` | Yes | `tm-db` | PostgreSQL host |
+| `POSTGRES_PORT` | Yes | `5432` | PostgreSQL port |
+| `TM_APP_API_URL` | No | `http://127.0.0.1:3000/api` | Backend API URL consumed by the frontend |
+| `TM_DEV_PORT` | No | `3000` | Traefik-exposed port for the frontend (Docker only) |
+| `TM_ENABLE_SANDBOX` | No | `false` | Enable the sandbox/practice mapping mode |
+| `TM_DEFAULT_LOCALE` | No | `en` | Default UI language |

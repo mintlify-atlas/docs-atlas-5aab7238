@@ -1,0 +1,149 @@
+---
+title: "Tasking Manager REST API Overview"
+sidebarTitle: "Overview"
+description: "HOT Tasking Manager exposes a versioned REST API at /api/v2/. Explore endpoints for projects, tasks, users, teams, organisations, campaigns, and more."
+---
+
+The HOT Tasking Manager provides a fully versioned REST API that powers both the official web frontend and any third-party integrations. All resources are served as JSON under the `/api/v2/` prefix. Whether you are automating project creation, querying task statistics, or building a custom mapping dashboard, every capability available in the browser UI is reachable through the API.
+
+## Base URL
+
+The API base URL is determined by the `TM_APP_API_URL` environment variable. In a local development environment the default is:
+
+```
+http://127.0.0.1:5000/api/v2/
+```
+
+For the HOT production instance the base URL is:
+
+```
+https://tasks.hotosm.org/api/v2/
+```
+
+<Note>
+  The Tasking Manager ships with an interactive **Swagger UI** at `/api/docs`. You can explore every endpoint, read parameter descriptions, and execute live requests directly from your browser without writing any code. The raw OpenAPI schema is available at `/api/openapi.json`.
+</Note>
+
+## API Version
+
+All endpoints are prefixed with `/api/v2/`. There is currently one stable version of the API (`v2`). The version is also exposed via the `API_VERSION` setting (`TM_APP_API_VERSION` environment variable).
+
+## Content Type
+
+All request and response bodies use `application/json`. Set the `Content-Type` header accordingly when sending a body:
+
+```bash
+Content-Type: application/json
+```
+
+## Authentication
+
+Protected endpoints require a Bearer token in the `Authorization` header:
+
+```
+Authorization: Token <your-session-token>
+```
+
+See [Authentication](/api/authentication) for the full OAuth 2.0 login flow and instructions on obtaining a token.
+
+## Error Response Format
+
+All errors follow a consistent envelope structure regardless of the HTTP status code:
+
+```json
+{
+  "error": {
+    "code": 404,
+    "sub_code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+A special case applies to invalid or expired authentication tokens. When the `SubCode` is `InvalidToken`, the response takes a slightly different shape and includes a `WWW-Authenticate: Bearer` header:
+
+```json
+{
+  "Error": "Token is expired or invalid",
+  "SubCode": "InvalidToken"
+}
+```
+
+## Common HTTP Status Codes
+
+| Status Code | Meaning |
+|---|---|
+| `200 OK` | Request succeeded. |
+| `201 Created` | Resource was created successfully. |
+| `400 Bad Request` | The request body or query parameters are invalid. |
+| `401 Unauthorized` | No token was provided, or the token is expired/invalid. |
+| `403 Forbidden` | The authenticated user does not have permission to perform this action. |
+| `404 Not Found` | The requested resource does not exist. |
+| `409 Conflict` | The operation conflicts with the current state of the resource. |
+| `500 Internal Server Error` | An unexpected server-side error occurred. |
+
+## Resource Groups
+
+The API is organised into the following resource groups. Each group owns a distinct URL namespace under `/api/v2/`.
+
+| Resource | Base Path |
+|---|---|
+| Projects | `/api/v2/projects/` |
+| Tasks | `/api/v2/projects/{project_id}/tasks/` |
+| Users | `/api/v2/users/` |
+| Teams | `/api/v2/teams/` |
+| Organisations | `/api/v2/organisations/` |
+| Campaigns | `/api/v2/campaigns/` |
+| Notifications | `/api/v2/notifications/` |
+| System | `/api/v2/system/` |
+| Countries | `/api/v2/countries/` |
+| Interests | `/api/v2/interests/` |
+| Licenses | `/api/v2/licenses/` |
+| Partners | `/api/v2/partners/` |
+
+## CORS
+
+Cross-Origin Resource Sharing is configured via the `EXTRA_CORS_ORIGINS` environment variable. In development this defaults to `["*"]`. In production, set `EXTRA_CORS_ORIGINS` to a comma-separated list of allowed origins to restrict access:
+
+```bash
+EXTRA_CORS_ORIGINS=https://myapp.example.com,https://dashboard.example.com
+```
+
+## Localization
+
+The API supports multiple languages. Send an `Accept-Language` header to receive localized strings (such as project names and instructions) in the preferred locale:
+
+```bash
+Accept-Language: fr
+```
+
+Supported language codes are listed at `GET /api/v2/system/languages/`.
+
+## System Utilities
+
+A few system endpoints are useful for monitoring and diagnostics:
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/v2/system/heartbeat/` | Health check — returns service status and latest release version. |
+| `GET /api/v2/system/languages/` | Returns all supported language codes and display names. |
+| `GET /api/v2/system/statistics/` | Returns aggregate platform statistics. |
+| `GET /api/v2/system/banner/` | Returns the currently active system-wide banner message. |
+
+## Explore the API
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to authenticate with OSM OAuth 2.0 and obtain a Bearer token for protected endpoints.
+  </Card>
+  <Card title="Projects" icon="map" href="/api/projects">
+    Create, search, and manage mapping projects. Projects are the primary unit of work in the Tasking Manager.
+  </Card>
+  <Card title="Tasks" icon="list-check" href="/api/tasks">
+    Lock, map, validate, and query individual tasks within a project.
+  </Card>
+  <Card title="Users" icon="user" href="/api/users">
+    Look up user profiles, statistics, assigned tasks, and OpenStreetMap account details.
+  </Card>
+</CardGroup>

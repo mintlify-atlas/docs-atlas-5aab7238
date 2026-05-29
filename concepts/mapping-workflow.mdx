@@ -1,0 +1,210 @@
+---
+title: "Mapping and Validation Workflow in Tasking Manager"
+sidebarTitle: "Mapping Workflow"
+description: "Understand how contributors select, lock, map, and submit tasks — and how validators review completed work to ensure OSM data quality."
+---
+
+The HOT Tasking Manager coordinates large-scale OpenStreetMap editing campaigns by dividing a project's area of interest into discrete tasks that mappers claim and work on independently. A two-phase workflow — **mapping** followed by **validation** — ensures that every task is both contributed and quality-checked before a project reaches completion. This page explains each phase in detail, from browsing projects to marking a task as fully validated.
+
+## Mapper Levels
+
+Mapper levels are not global roles — they are experience indicators derived from a user's OSM history. They determine which projects are visible and accessible to a contributor.
+
+The level thresholds are configured via environment variables in `backend/config.py`:
+
+| Level | Changeset Threshold | Environment Variable |
+|---|---|---|
+| Beginner | Fewer than `TM_MAPPER_LEVEL_INTERMEDIATE` changesets | — |
+| Intermediate | `TM_MAPPER_LEVEL_INTERMEDIATE` to `TM_MAPPER_LEVEL_ADVANCED` changesets | `TM_MAPPER_LEVEL_INTERMEDIATE` (default: **250**) |
+| Advanced | `TM_MAPPER_LEVEL_ADVANCED` or more changesets | `TM_MAPPER_LEVEL_ADVANCED` (default: **500**) |
+
+Project managers set a required difficulty when creating a project (`EASY`, `MODERATE`, or `CHALLENGING`). The platform uses mapping levels to surface appropriate projects to each contributor.
+
+## Supported Editors
+
+Tasking Manager can open tasks directly in any of the following OSM editors:
+
+| Editor | Type | Notes |
+|---|---|---|
+| **iD** | Web (browser-based) | Default editor; beginner-friendly |
+| **Rapid** | Web (browser-based) | AI-assisted mapping powered by Meta |
+| **JOSM** | Desktop | Advanced editor; requires local installation |
+| **Potlatch 2** | Web (Flash-based) | Legacy editor |
+| **Custom** | Configurable | Project managers can specify a custom editor URL |
+
+Each project stores separate lists of permitted editors for mapping (`mapping_editors`) and validation (`validation_editors`). A mapper will only see editor buttons for editors the project manager has enabled.
+
+## OSM Changeset Comments
+
+Every edit made through Tasking Manager should carry an OSM changeset comment that includes the project hashtag. Tasking Manager automatically prepends the system-wide default prefix (configured via `TM_DEFAULT_CHANGESET_COMMENT`, default: `#hot-tm-stage-project`) followed by the project ID:
+
+```
+#hot-tm-stage-project-42 <any additional comment set by the project manager>
+```
+
+<Tip>
+Always include a meaningful changeset comment when submitting edits. The auto-applied hashtag enables the ohsome Now Stats service (`https://stats.now.ohsome.org`) to track contributions per project in real time.
+</Tip>
+
+## Mapping Workflow
+
+The mapping phase moves a task from `READY` through `LOCKED_FOR_MAPPING` to `MAPPED` (or `BADIMAGERY`).
+
+<Steps>
+  <Step title="Browse projects and select a task">
+    Open the Tasking Manager project list and choose a project that matches your mapper level and interests. On the project's task grid, select any task shown in `READY` status (displayed in grey). Priority areas — sub-polygons defined by the project manager — are highlighted to guide where to map first.
+  </Step>
+  <Step title="Lock the task for mapping">
+    Click **Map** to lock the task. The API call issued is:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/lock-for-mapping/{task_id}/
+    ```
+
+    The task status changes to `LOCKED_FOR_MAPPING` and is associated with your user ID. No other mapper can lock the same task until the lock is released. You may only hold one task lock per project at a time.
+  </Step>
+  <Step title="Edit in your chosen OSM editor">
+    Tasking Manager opens the selected editor (iD, Rapid, JOSM, or Potlatch 2) pre-zoomed to the task boundary. Trace the features described in the project instructions — typically buildings, roads, waterways, or land use polygons — and save your edits to OSM with the auto-populated changeset comment.
+  </Step>
+  <Step title="Submit the task">
+    Return to Tasking Manager and submit the task by calling:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/unlock-after-mapping/{task_id}/
+    ```
+
+    with a JSON body specifying the new status:
+
+    ```json
+    {
+      "status": "MAPPED",
+      "comment": "Traced all visible buildings from Maxar imagery"
+    }
+    ```
+
+    Valid target statuses after mapping are:
+
+    - **`MAPPED`** — Mapping is complete; task is ready for validation.
+    - **`BADIMAGERY`** — Imagery is too cloudy or low-resolution to map reliably. The task is marked and excluded from the progress percentage.
+    - **`READY`** — Stop and release the task without any changes (equivalent to abandoning).
+  </Step>
+  <Step title="Auto-unlock if you step away">
+    If a task lock is held beyond the configured timeout without being submitted, the system automatically releases it and reverts the task to its previous status. The timeout is set by:
+
+    ```bash
+    TM_TASK_AUTOUNLOCK_AFTER=2h   # default 2 hours; accepts 30m, 1h30m, 7d, etc.
+    ```
+
+    Auto-unlock runs when any user fetches the project page. Mappers can also manually stop mapping at any time via:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/stop-mapping/{task_id}/
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+If you start mapping a task and realise it has already been partially traced by a previous mapper, add a comment when you submit so the validator has context. Tasking Manager preserves the full task history including all prior comments.
+</Tip>
+
+## Validation Workflow
+
+Validation is the quality-assurance phase. Validators review mapped tasks, check OSM edits against imagery and tagging standards, and either approve or reject the work.
+
+<Note>
+A user cannot validate their own mapped tasks. The system enforces this rule in `ValidatorService._user_can_validate_task` — the only exception is for system admins, who can validate any task.
+</Note>
+
+<Steps>
+  <Step title="Select tasks for validation">
+    On the project map, filter for tasks in `MAPPED` status (shown in yellow). Validators can select one or multiple tasks to review in a batch. Tasks in `INVALIDATED` or `BADIMAGERY` status can also be selected for re-validation.
+  </Step>
+  <Step title="Lock tasks for validation">
+    Lock the selected tasks with:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/lock-for-validation/
+    ```
+
+    with a body listing the task IDs:
+
+    ```json
+    {
+      "taskIds": [14, 15, 16],
+      "comment": ""
+    }
+    ```
+
+    Each task moves to `LOCKED_FOR_VALIDATION`. Other users cannot modify the tasks while they are locked.
+  </Step>
+  <Step title="Review OSM edits">
+    Open the locked tasks in your preferred editor (iD, Rapid, or JOSM) and examine the edits made by the mapper. Check that:
+
+    - All requested features (e.g., buildings, roads) have been traced within the task boundary.
+    - Tags are correct (e.g., `building=yes`, `highway=residential`).
+    - Geometry is accurate relative to the available imagery.
+    - No features cross the task boundary in ways that create topology errors.
+  </Step>
+  <Step title="Submit validation decision">
+    Unlock the tasks and record your decision:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/unlock-after-validation/
+    ```
+
+    with a body such as:
+
+    ```json
+    {
+      "validatedTasks": [
+        {
+          "taskId": 14,
+          "status": "VALIDATED",
+          "comment": "Well mapped — all buildings traced correctly."
+        },
+        {
+          "taskId": 15,
+          "status": "INVALIDATED",
+          "comment": "Several buildings missed in the south-east corner. Please re-map."
+        }
+      ]
+    }
+    ```
+
+    - **`VALIDATED`** — Edits are correct. Task moves to `VALIDATED` status and is counted in the project's completion percentage.
+    - **`INVALIDATED`** — Edits need revision. Task reverts to `READY` so another mapper can correct it. The original mapper receives a notification with the validator's comment.
+  </Step>
+  <Step title="Stop validation without a decision">
+    If you need to release validation locks without submitting a verdict, call:
+
+    ```
+    POST /projects/{project_id}/tasks/actions/stop-validation/
+    ```
+
+    This returns the tasks to `MAPPED` status.
+  </Step>
+</Steps>
+
+<Tip>
+Validation is as much about mentoring as it is about quality control. When invalidating a task, always leave a clear comment explaining what was missed and how to fix it. See the [HOT Validation FAQ](https://www.missingmaps.org/assets/downloads/MissingMaps_validation_faq_en.pdf) for guidance on common issues.
+</Tip>
+
+## Real-Time Statistics
+
+Tasking Manager integrates with **ohsome Now Stats** (`https://stats.now.ohsome.org`) to provide real-time contribution statistics per project, based on the changeset hashtag. Stats include total edits, feature counts, and active contributor numbers — useful for monitoring progress during live mapathon events.
+
+## Sandbox and Practice Projects
+
+Projects with `sandbox: true` connect to a practice OSM database instead of the live `openstreetmap.org` database. All editor sessions opened from a sandbox project write to this isolated environment. Sandbox projects are ideal for:
+
+- Training new mappers at mapathons
+- Testing project configurations before publishing to production
+- Allowing contributors to practice difficult feature types without risk
+
+The sandbox flag is visible in the project's metadata and is set permanently at creation time.
+
+## Related Topics
+
+- [Projects and Tasks](/concepts/projects-and-tasks) — How projects and task grids are structured
+- [Teams and Organisations](/concepts/teams-and-organisations) — Restricting who can map or validate a project
+- [Roles and Permissions](/concepts/roles-and-permissions) — Global and project-level permission model

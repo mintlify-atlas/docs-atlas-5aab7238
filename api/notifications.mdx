@@ -1,0 +1,387 @@
+---
+title: "Notifications API — User Notifications and Inbox"
+sidebarTitle: "Notifications"
+description: "REST endpoints for retrieving, reading, and deleting user notifications and inbox messages in HOT Tasking Manager."
+---
+
+The Notifications API surfaces in-app messages delivered to a user's inbox. Messages are created by system events (task validations, invalidations, project broadcasts, team invitations, and more) and can also be sent directly by project managers or team managers. All endpoints require an authenticated session — each user can only read and manage their own messages.
+
+---
+
+## Notification Resources
+
+### List Notifications
+
+<br />
+
+**`GET /api/v2/notifications/`**
+
+Returns a paginated list of messages for the authenticated user. Supports filtering by message type, sender, project, task, and read status, as well as configurable sort order.
+
+**Authentication:** Required
+
+**Query Parameters**
+
+<ParamField query="messageType" type="string">
+  Filter by message type integer. Accepted values:
+
+  | Value | Type |
+  |-------|------|
+  | `1`   | System |
+  | `2`   | Broadcast |
+  | `3`   | Mention |
+  | `4`   | Validation |
+  | `5`   | Invalidation |
+  | `6`   | Request team |
+  | `7`   | Invitation |
+  | `8`   | Task comment |
+  | `9`   | Project chat |
+  | `10`  | Project Activity |
+  | `11`  | Team broadcast |
+</ParamField>
+
+<ParamField query="from" type="string">
+  Filter messages sent from a specific username.
+</ParamField>
+
+<ParamField query="project" type="string">
+  Filter messages associated with a specific project (by project ID or name).
+</ParamField>
+
+<ParamField query="taskId" type="integer">
+  Filter messages associated with a specific task ID.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by read status. Accepted values: `read` or `unread`.
+</ParamField>
+
+<ParamField query="sortBy" type="string" default="date">
+  Field to sort results by. Options: `date`, `read`, `project_id`, `message_type`.
+</ParamField>
+
+<ParamField query="sortDirection" type="string" default="desc">
+  Sort direction: `asc` or `desc`.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number.
+</ParamField>
+
+<ParamField query="pageSize" type="integer" default="10">
+  Number of results per page.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "userMessages": [
+    {
+      "messageId": 1021,
+      "subject": "Task 47 was validated",
+      "message": "Your mapping of task 47 in project 312 has been validated. Great work!",
+      "fromUserId": 88,
+      "fromUsername": "validator_jane",
+      "displayPictureUrl": "https://example.com/avatar.jpg",
+      "projectId": 312,
+      "projectTitle": "West Africa Flood Response",
+      "taskId": 47,
+      "messageType": "Validation",
+      "sentDate": "2024-03-12T14:22:00Z",
+      "read": false
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "perPage": 10,
+    "total": 34,
+    "pages": 4
+  }
+}
+```
+
+<CodeGroup>
+```bash cURL — list unread notifications
+curl -X GET "https://tasking-manager-api.example.com/api/v2/notifications/?status=unread&sortBy=date&sortDirection=desc" \
+  -H "Authorization: Token YOUR_SESSION_TOKEN"
+```
+
+```bash cURL — filter by message type
+curl -X GET "https://tasking-manager-api.example.com/api/v2/notifications/?messageType=4&page=1&pageSize=20" \
+  -H "Authorization: Token YOUR_SESSION_TOKEN"
+```
+</CodeGroup>
+
+---
+
+### Get a Single Notification
+
+<br />
+
+**`GET /api/v2/notifications/{message_id}/`**
+
+Retrieves a single message by its ID. The message must belong to the authenticated user.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="message_id" type="integer" required>
+  The unique numeric message ID.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "messageId": 1021,
+  "subject": "Task 47 was validated",
+  "message": "Your mapping of task 47 in project 312 has been validated. Great work!",
+  "fromUserId": 88,
+  "fromUsername": "validator_jane",
+  "displayPictureUrl": "https://example.com/avatar.jpg",
+  "projectId": 312,
+  "projectTitle": "West Africa Flood Response",
+  "taskId": 47,
+  "messageType": "Validation",
+  "sentDate": "2024-03-12T14:22:00Z",
+  "read": false
+}
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `403`  | Message does not belong to the authenticated user |
+| `404`  | Message not found |
+
+---
+
+### Delete a Notification
+
+<br />
+
+**`DELETE /api/v2/notifications/{message_id}/`**
+
+Permanently deletes a single message. The message must belong to the authenticated user.
+
+**Authentication:** Required
+
+**Path Parameters**
+
+<ParamField path="message_id" type="integer" required>
+  The unique numeric message ID.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Message deleted" }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `403`  | Message does not belong to the authenticated user |
+| `404`  | Message not found |
+
+---
+
+## Notification Actions
+
+### Count Unread Notifications
+
+<br />
+
+**`GET /api/v2/notifications/queries/own/count-unread/`**
+
+Returns the number of unread messages for the authenticated user since their last notification check. This is the lightweight endpoint intended for polling notification badges in the UI.
+
+**Authentication:** Required
+
+**Response** `200 OK`
+
+```json
+{ "newMessages": 5 }
+```
+
+---
+
+### Update Notification Timestamp
+
+<br />
+
+**`POST /api/v2/notifications/queries/own/post-unread/`**
+
+Updates the notification checkpoint datetime for the authenticated user, effectively resetting the unread counter baseline. Call this endpoint after the user opens their notification inbox.
+
+**Authentication:** Required
+
+**Response** `200 OK` — returns the updated notification record.
+
+---
+
+### Bulk Delete Notifications
+
+<br />
+
+**`DELETE /api/v2/notifications/delete-multiple/`**
+
+Deletes a specified set of messages for the authenticated user in a single transactional operation. Only messages owned by the requesting user are deleted.
+
+**Authentication:** Required
+
+**Request Body**
+
+<ParamField body="messageIds" type="array" required>
+  Array of integer message IDs to delete.
+</ParamField>
+
+```json
+{ "messageIds": [1021, 1022, 1045] }
+```
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Messages deleted" }
+```
+
+<Note>
+  If `messageIds` is empty the request succeeds immediately without modifying any data.
+</Note>
+
+---
+
+### Delete All Notifications
+
+<br />
+
+**`DELETE /api/v2/notifications/delete-all/`**
+
+Deletes all messages for the authenticated user. An optional `messageType` filter can be supplied to delete only messages of a specific type.
+
+**Authentication:** Required
+
+**Query Parameters**
+
+<ParamField query="messageType" type="string">
+  Optional message-type integer. When supplied, only messages of that type are deleted. Omit to delete all messages.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Messages deleted" }
+```
+
+---
+
+### Mark All Notifications as Read
+
+<br />
+
+**`POST /api/v2/notifications/mark-as-read-all/`**
+
+Marks all messages for the authenticated user as read. An optional `messageType` filter limits the operation to a specific message type.
+
+**Authentication:** Required
+
+**Query Parameters**
+
+<ParamField query="messageType" type="string">
+  Optional message-type integer. When supplied, only messages of that type are marked as read.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Messages marked as read" }
+```
+
+---
+
+### Mark Multiple Notifications as Read
+
+<br />
+
+**`POST /api/v2/notifications/mark-as-read-multiple/`**
+
+Marks a specific set of messages as read for the authenticated user.
+
+**Authentication:** Required
+
+**Request Body**
+
+<ParamField body="messageIds" type="array" required>
+  Array of integer message IDs to mark as read.
+</ParamField>
+
+```json
+{ "messageIds": [1021, 1022, 1045] }
+```
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Messages marked as read" }
+```
+
+---
+
+## Data Models
+
+<ResponseField name="messageId" type="integer">
+  Unique numeric identifier for the message.
+</ResponseField>
+
+<ResponseField name="subject" type="string">
+  Subject line of the notification.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Full body text of the notification.
+</ResponseField>
+
+<ResponseField name="fromUserId" type="integer">
+  User ID of the sender.
+</ResponseField>
+
+<ResponseField name="fromUsername" type="string">
+  Username of the sender.
+</ResponseField>
+
+<ResponseField name="displayPictureUrl" type="string">
+  Avatar URL of the sender.
+</ResponseField>
+
+<ResponseField name="projectId" type="integer">
+  ID of the related project, if applicable.
+</ResponseField>
+
+<ResponseField name="projectTitle" type="string">
+  Title of the related project, if applicable.
+</ResponseField>
+
+<ResponseField name="taskId" type="integer">
+  ID of the related task, if applicable.
+</ResponseField>
+
+<ResponseField name="messageType" type="string">
+  Human-readable message type label (e.g. `Validation`, `Broadcast`, `Invitation`).
+</ResponseField>
+
+<ResponseField name="sentDate" type="string">
+  ISO 8601 timestamp indicating when the message was sent.
+</ResponseField>
+
+<ResponseField name="read" type="boolean">
+  Whether the authenticated user has read the message.
+</ResponseField>
+
+<Tip>
+  Poll `GET /api/v2/notifications/queries/own/count-unread/` at a low frequency (e.g. every 30–60 seconds) to drive notification badges. Use `POST /api/v2/notifications/queries/own/post-unread/` when the user opens the inbox to reset the unread count baseline.
+</Tip>

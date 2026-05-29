@@ -1,0 +1,92 @@
+---
+title: "Contributing to HOT Tasking Manager"
+sidebarTitle: "Overview"
+description: "Learn how to contribute to HOT Tasking Manager: report bugs, suggest features, test releases, write code, and participate in the mapping community."
+---
+
+HOT Tasking Manager is a community-driven project and every contribution matters — whether you are a seasoned developer, a translator, a mapper, or someone filing their very first bug report. We welcome contributors of all skill levels and are committed to making participation inclusive, enjoyable, and rewarding. The project is maintained in collaboration with [Naxa](https://www.naxa.com.np/), and together we look forward to working with you on GitHub and beyond.
+
+## Ways to Contribute
+
+There are many paths into the project. Pick the one that suits you best — or try them all.
+
+### 1. Report Bugs and Suggest Improvements
+
+The [GitHub issue queue](https://github.com/hotosm/tasking-manager/issues) is the best starting point. Ready-made templates are available for **Bugs** and **Features**, or you can open a free-form issue. Once submitted, every issue is triaged using a structured label system:
+
+| Label Category | Description |
+|---|---|
+| **Backlog** | `Backlog=triage` is the first label applied to any new issue |
+| **Assigned** | After triage, issues are assigned to either `hot_tech` or `tm_collective` — issues assigned to `tm_collective` are where community help is most needed |
+| **Type** | Indicates whether the issue is a `bug` or a `feature/enhancement` |
+| **Priority** | Collaboratively agreed priority level for the issue |
+| **Status** | Tracks whether the issue is `in progress` or `done` |
+| **Experience** | A `beginner` label marks good first issues for newcomers |
+
+<Note>
+Issues older than six months with no engagement will be labelled as **archived**. If you want to keep an issue active, leave a comment to signal continued interest.
+</Note>
+
+### 2. Test Bug Fixes and New Features
+
+Once a fix or feature has been reviewed and merged into the `develop` branch, it is automatically deployed to the [Tasking Manager Staging site](https://tasks-stage.hotosm.org). You can log in there and test the change hands-on. If you spot anything unexpected, leave a comment directly on the relevant Pull Request.
+
+### 3. Code Contributions
+
+Create pull requests for changes you believe would improve the project. Core skills that are particularly helpful include Python, FastAPI, JavaScript, React, Docker, and CI/CD workflows. The latest task board is always available at [github.com/orgs/hotosm/projects/14](https://github.com/orgs/hotosm/projects/14).
+
+See the [Pull Requests guide](/contributing/pull-requests) for step-by-step instructions on submitting and reviewing code changes.
+
+### 4. Translations
+
+Tasking Manager supports 26+ languages, making it accessible to humanitarian mappers around the world. Translations are managed through [Transifex](https://www.transifex.com/hotosm/tasking-manager/dashboard/) — no coding experience required to contribute.
+
+See the [Translations guide](/contributing/translations) for details on joining the translation team and updating locale strings.
+
+### 5. Join the Tasking Manager Collective Meet Up
+
+The Tasking Manager Collective Meet Up is held on the **second Wednesday of every month** at **9:00 UTC** or **15:00 UTC**. It is an open, welcoming space to meet other contributors, discuss ongoing work, and help shape the project's direction.
+
+<Note>
+Register for a calendar invite at [bit.ly/3s6ntmV](https://bit.ly/3s6ntmV) or join directly via Jitsi:
+[meet.jit.si/TaskingManagerCollectiveMeetUp](https://meet.jit.si/TaskingManagerCollectiveMeetUp)
+</Note>
+
+## Branch Model
+
+Tasking Manager uses a **trunk-based development** model with `develop` as the primary branch. All active development flows through it.
+
+| Branch Prefix | Purpose | Review Requirement |
+|---|---|---|
+| `feature/` | New features and enhancements | 1 approved review before merge to `develop` |
+| `bugfix/` | Non-critical fixes for the next scheduled release | 2 approved reviews before merge to `develop` |
+| `hotfix/` | Emergency fixes that must ship immediately | 2 approved reviews before merge to `develop` |
+| `deployment/` | Snapshots of deployed production code | Managed by core maintainers |
+
+Branch names follow the convention `type/ISSUENUMBER-short-description-in-hyphens` — for example, `feature/893-restrict-available-editors`.
+
+<Tip>
+Outside collaborators from the wider community are not required to follow the trunk branching model strictly. The core team will help align any contribution during the review process.
+</Tip>
+
+## Release Cadence
+
+- **Major releases** (e.g., `5.1.0`, `5.2.0`) ship approximately **every six weeks**. A one-week feature freeze precedes the merge to `master`, during which only critical fixes are accepted. Two core-contributor code reviews plus sign-off from the `@hotosm/software-testers` group are required.
+- **Minor / hotfix releases** (e.g., `5.1.1`) are emergency releases for critical bugs. They are merged to both `master` and `develop` and require two core-contributor code reviews.
+
+## Code of Conduct
+
+All participants in the Tasking Manager project are expected to uphold the [HOT Code of Conduct](https://www.hotosm.org/code-of-conduct), which is informed by the [Contributor Covenant](http://contributor-covenant.org/). The principles are simple: be friendly, be welcoming, be considerate, and assume good faith. Harassment and exclusionary behaviour have no place in this community.
+
+If you experience or witness a conduct issue, you can reach the HOT Community Working Group at [community@hotosm.org](mailto:community@hotosm.org) or file a formal complaint at [complaints@hotosm.org](mailto:complaints@hotosm.org).
+
+## Explore Further
+
+<CardGroup cols={2}>
+  <Card title="Pull Requests" icon="code-pull-request" href="/contributing/pull-requests">
+    Step-by-step guidance for submitting well-scoped PRs and reviewing others' contributions.
+  </Card>
+  <Card title="Translations" icon="language" href="/contributing/translations">
+    Help make Tasking Manager accessible in your language using Transifex.
+  </Card>
+</CardGroup>

@@ -1,0 +1,197 @@
+---
+title: "Projects and Tasks: The Core Mapping Units"
+sidebarTitle: "Projects & Tasks"
+description: "Learn how Tasking Manager splits geographic areas of interest into task grids, and how project metadata controls mapping priorities and editor settings."
+---
+
+A **Project** in HOT Tasking Manager represents a coordinated mapping effort focused on a defined geographic region. Each project stores an area of interest (AoI) as a GeoJSON multipolygon, along with descriptive metadata — such as name, instructions, difficulty level, changeset comment, allowed editors, and the organisation that owns it. Once a project boundary is defined, Tasking Manager divides it into a grid of smaller **Tasks** so that many mappers can work simultaneously without overlapping edits in OpenStreetMap.
+
+## Projects
+
+### Project Metadata
+
+Every project carries a set of fields that control how mappers and validators interact with it:
+
+| Field | Description |
+|---|---|
+| `name` | Human-readable project title (stored in `project_info` per locale) |
+| `status` | Lifecycle state (see below) |
+| `difficulty` | Target mapper experience level |
+| `priority` | Scheduling priority: `URGENT`, `HIGH`, `MEDIUM`, `LOW` |
+| `changeset_comment` | OSM changeset hashtag auto-prefixed to each edit |
+| `mapping_editors` | Editors permitted for mapping (iD, JOSM, Rapid, etc.) |
+| `validation_editors` | Editors permitted for validation |
+| `organisation_id` | Owning organisation |
+| `private` | When `true`, only users on the allowed list may contribute |
+| `sandbox` | When `true`, edits go to a practice database — not production OSM |
+| `imagery` | Custom background imagery URL |
+| `due_date` | Optional deadline for completing the project |
+
+### Project Statuses
+
+The `ProjectStatus` enum (from `backend/models/postgis/statuses.py`) defines the lifecycle states of a project:
+
+| Status | Value | Description |
+|---|---|---|
+| `DRAFT` | `2` | Project is being configured; not visible to mappers |
+| `PUBLISHED` | `1` | Project is live and open for contributions |
+| `ARCHIVED` | `0` | Project is closed; no longer accepting mapping |
+
+<Note>
+There is no `FLAGGED` status in the current codebase. The three states above — `DRAFT`, `PUBLISHED`, and `ARCHIVED` — are the complete set defined in `ProjectStatus`.
+</Note>
+
+### Project Difficulty
+
+The `ProjectDifficulty` enum controls which mapper experience level the project is designed for:
+
+| Difficulty | Value | Intended For |
+|---|---|---|
+| `EASY` | `1` | New mappers with minimal OSM experience |
+| `MODERATE` | `2` | Mappers with some prior mapping history |
+| `CHALLENGING` | `3` | Experienced mappers comfortable with complex features |
+
+### Project Priority Levels
+
+Priority indicates urgency relative to other published projects:
+
+- **URGENT** (0) — Immediate humanitarian response required
+- **HIGH** (1) — High-importance campaign
+- **MEDIUM** (2) — Standard mapping work (default)
+- **LOW** (3) — Background or low-priority coverage
+
+### Mapping Types
+
+Projects can be tagged with one or more `MappingTypes` to describe what mappers should trace:
+
+- `ROADS`, `BUILDINGS`, `WATERWAYS`, `LAND_USE`, `OTHER`
+
+### Allowed Editors
+
+The `Editors` enum lists the OSM editors that can be configured per project:
+
+| Editor | Value |
+|---|---|
+| `ID` (iD Web Editor) | `0` |
+| `JOSM` | `1` |
+| `POTLATCH_2` | `2` |
+| `FIELD_PAPERS` | `3` |
+| `CUSTOM` | `4` |
+| `RAPID` | `5` |
+
+By default, new projects allow **iD**, **JOSM**, and **Custom** editors for both mapping and validation.
+
+## Tasks
+
+### What a Task Is
+
+A task is a sub-polygon of the project's AoI grid. Each task has:
+
+- **`id`** — Integer ID unique within the project
+- **`project_id`** — Foreign key to the parent project
+- **`task_status`** — Current lifecycle state (integer, mapped from `TaskStatus` enum)
+- **`geometry`** — GeoJSON polygon defining the task boundary (WGS-84 / SRID 4326)
+- **`locked_by`** — User ID of whoever currently holds the lock (nullable)
+- **`mapped_by`** — User ID of the mapper who submitted the task as mapped
+
+Tasks are created automatically when a project is first saved, based on the chosen grid size. The task creation mode can be `GRID` (uniform squares) or `ARBITRARY` (custom polygons uploaded by the project manager).
+
+### Task Statuses
+
+The `TaskStatus` enum defines every state a task can be in:
+
+| Status | Value | Meaning |
+|---|---|---|
+| `READY` | `0` | Available for a mapper to select and lock |
+| `LOCKED_FOR_MAPPING` | `1` | Locked by a mapper who is currently editing |
+| `MAPPED` | `2` | Mapper has submitted work; awaiting validation |
+| `LOCKED_FOR_VALIDATION` | `3` | Locked by a validator who is reviewing the edits |
+| `VALIDATED` | `4` | Validator has confirmed the edits are correct |
+| `INVALIDATED` | `5` | Validator has rejected the edits; task returns to editable state |
+| `BADIMAGERY` | `6` | Task cannot be mapped due to cloud cover or unusable imagery |
+| `SPLIT` | `7` | Task has been subdivided into smaller tasks |
+
+### Task Lifecycle
+
+The standard path for a task from creation to completion is:
+
+<Note>
+**Primary lifecycle:**
+
+`READY` → `LOCKED_FOR_MAPPING` → `MAPPED` → `LOCKED_FOR_VALIDATION` → `VALIDATED`
+
+**Alternative paths:**
+
+- A mapper can mark a task `BADIMAGERY` instead of `MAPPED` if imagery is unusable.
+- A validator can mark a task `INVALIDATED` (returns to `READY` for re-mapping) instead of `VALIDATED`.
+- A mapper can stop mapping, returning the task to its previous state (`READY`).
+- Project managers can split a task (`SPLIT`) to create finer-grained sub-tasks.
+</Note>
+
+### Task Locking
+
+Locking prevents two mappers from editing the same area simultaneously. When a user locks a task for mapping, `locked_by` is set to their user ID and the status changes to `LOCKED_FOR_MAPPING`. No other user can lock the same task until it is explicitly unlocked or auto-unlocked.
+
+**Auto-unlock:** If a mapper locks a task but does not submit it within the configured timeout, the system automatically releases the lock and reverts the task to its previous status. The timeout is controlled by:
+
+```bash
+TM_TASK_AUTOUNLOCK_AFTER=2h   # default: 2 hours; accepts formats like 30m, 1h30m, 7d
+```
+
+This value is read by the backend at startup (`backend/config.py`, `Settings.TASK_AUTOUNLOCK_AFTER`). Auto-unlock is triggered when the project is fetched via `GET /projects/{project_id}/`.
+
+## Creating a Project
+
+Project creation follows a two-step workflow:
+
+<Steps>
+  <Step title="Upload a GeoJSON boundary">
+    Send a `POST /projects/` request with a GeoJSON `FeatureCollection` defining the area of interest. The backend dissolves all features into a single `MULTIPOLYGON` and stores it in EPSG:4326.
+
+    ```json
+    {
+      "projectName": "Dar es Salaam Building Mapping",
+      "areaOfInterest": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [[[39.18, -6.87], [39.32, -6.87], [39.32, -6.77], [39.18, -6.77], [39.18, -6.87]]]
+            },
+            "properties": {}
+          }
+        ]
+      },
+      "organisation": { "organisation_id": 12 }
+    }
+    ```
+  </Step>
+  <Step title="Set project metadata and publish">
+    Use `PATCH /projects/{project_id}/` to add a description, set difficulty, assign mapping types, configure allowed editors, and set the changeset comment. Once ready, set `status` to `PUBLISHED`.
+  </Step>
+</Steps>
+
+### AoI and File Size Limits
+
+The following environment variables cap the size of projects and uploaded files. They must be enforced at the application or infrastructure level:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TM_MAX_AOI_AREA` | 5,000 km² | Maximum area of a project's AoI |
+| `TM_IMPORT_MAX_FILESIZE` | 1 MB | Maximum size of an uploaded GeoJSON boundary file |
+
+<Note>
+Large AoIs produce many tasks and can slow down the mapping interface. Consider splitting very large regions into multiple focused projects rather than using the maximum AoI size.
+</Note>
+
+## Sandbox Projects
+
+Projects created with `sandbox: true` write OSM edits to a practice database rather than the live OpenStreetMap database. This is useful for training events and onboarding new mappers without risking data quality in production. The sandbox flag is set at project creation time and cannot be changed afterwards.
+
+## Related Topics
+
+- [Mapping and Validation Workflow](/concepts/mapping-workflow) — Step-by-step guide for mappers and validators
+- [Teams and Organisations](/concepts/teams-and-organisations) — How to restrict project access using teams
+- [Roles and Permissions](/concepts/roles-and-permissions) — Who can create, publish, and manage projects

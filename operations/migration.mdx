@@ -1,0 +1,192 @@
+---
+title: "Migrate Tasking Manager Between Major Versions"
+sidebarTitle: "Migration"
+description: "Step-by-step guide to migrate HOT Tasking Manager from v3 to v4 and from v4 to v5, including database backups and schema migration commands."
+---
+
+Major version upgrades to Tasking Manager may involve changes to the application stack, database schema, or both. Migrations are designed and tested by the core team but are not considered production-ready out of the box — environment-specific data volumes and configurations can introduce unexpected issues.
+
+<Warning>
+  Always take a full database backup before beginning a migration and run the full process in a staging environment first. Verify that your staging instance behaves correctly before applying the migration to production. Do not skip this step — some migrations involve irreversible schema changes.
+</Warning>
+
+<Tabs>
+  <Tab title="v4 → v5">
+    ## Migrate from Version 4 to Version 5
+
+    Version 5 is a major stack upgrade. The v4 backend was a synchronous application built with Flask and the `psycopg2` database driver. Version 5 replaces this with an asynchronous FastAPI backend using `asyncpg`. No specific database schema changes are required for this migration, but the application server and startup command have changed.
+
+    <Steps>
+      <Step title="Back up the database">
+        Although no schema changes are required, a backup before any major transition is strongly recommended:
+
+        ```bash
+        pg_dump -h <host> -p <port> -U <user> -d <dbname> -f ./backup.sql
+        ```
+
+        For AWS RDS deployments, you can also take a manual snapshot from the RDS console before proceeding.
+      </Step>
+
+      <Step title="Pull the latest code">
+        Use the `main` branch for the most stable release, or `develop` for the latest development build:
+
+        ```bash
+        git fetch
+        git checkout main
+        git pull origin main
+        ```
+      </Step>
+
+      <Step title="Rebuild and restart services">
+        Rebuild the containers to pick up the new Dockerfile and Python dependencies:
+
+        ```bash
+        docker compose --env-file tasking-manager.env up --build -d
+        ```
+
+        <Note>
+          The `--env-file tasking-manager.env` flag is important. Docker Compose uses `.env` as its default environment file, and the non-standard filename `tasking-manager.env` will not be loaded automatically. Omitting the flag can cause a database health-check warning about the PostgreSQL user not existing.
+        </Note>
+
+        The `tm-migration` container runs `alembic upgrade head` automatically before the backend starts. Watch its logs to confirm migrations complete cleanly:
+
+        ```bash
+        docker compose logs -f tm-migration
+        ```
+      </Step>
+
+      <Step title="Switch from WSGI to ASGI">
+        Version 5 is incompatible with WSGI servers such as gunicorn's default worker class. The Dockerfile has been updated to use `uvicorn` as the ASGI server. If you have a custom startup command or init script referencing gunicorn, replace it with:
+
+        ```bash
+        uvicorn backend.main:api \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --workers 8 \
+          --log-level critical \
+          --no-access-log
+        ```
+
+        The `TARGET_TAG` build argument controls the Docker build target. Use `debug` for development and `prod` for production deployments:
+
+        ```bash
+        TARGET_TAG=prod docker compose --env-file tasking-manager.env up --build -d
+        ```
+      </Step>
+
+      <Step title="Verify the deployment">
+        Confirm the API is responding correctly:
+
+        ```bash
+        curl -f http://localhost:5000/api/docs
+        ```
+
+        Check that the frontend loads in a browser and that you can authenticate with OSM OAuth2.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="v3 → v4">
+    ## Migrate from Version 3 to Version 4
+
+    Version 4 introduced Alembic-managed database migrations. The migration process involves an optional database cleanup step followed by running the built-in Alembic upgrade command.
+
+    <Steps>
+      <Step title="Back up the database">
+        Take a full database dump before making any changes:
+
+        ```bash
+        pg_dump -h <host> -p <port> -U <user> -d <dbname> -f ./backup-v3.sql
+        ```
+      </Step>
+
+      <Step title="Run the priority area deduplication script (optional)">
+        If your database contains duplicate priority areas from the v3 era, clean them up before migrating:
+
+        ```sql
+        psql -d myDataBase -a -f scripts/database/duplicate-priority-area-cleanup.sql
+        ```
+
+        This step is optional but recommended to avoid constraint violations during schema migration. Review the script output carefully before proceeding.
+      </Step>
+
+      <Step title="Pull the v4 code">
+        Check out the v4 release tag or the `develop` branch:
+
+        ```bash
+        git fetch
+        git checkout develop
+        git pull origin develop
+        ```
+      </Step>
+
+      <Step title="Run database migrations">
+        Depending on your Python environment, run the migration using one of the following commands:
+
+        ```bash
+        # Using Flask-Migrate (v4 uses Flask as the application framework)
+        flask db upgrade
+        ```
+
+        ```bash
+        # Using uv (if installed)
+        uv run upgrade
+        ```
+
+        Depending on the size of your database this step may take a significant amount of time. Do not interrupt it once started.
+      </Step>
+
+      <Step title="Restart the application">
+        Once migrations complete successfully, restart the application stack:
+
+        ```bash
+        docker compose --env-file tasking-manager.env up --build -d
+        ```
+      </Step>
+
+      <Step title="Verify the deployment">
+        Log in to the application and confirm that existing projects, tasks, and user accounts are intact. Check the application logs for any errors:
+
+        ```bash
+        docker compose logs -f tm-backend
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="v2 → v3">
+    ## Migrate from Version 2 to Version 3
+
+    Migration from TM2 to TM3 involves two phases: installing a fresh TM3 instance with an empty database, then running a SQL migration script to transfer all data from the TM2 database.
+
+    <Steps>
+      <Step title="Install TM3 with a fresh database">
+        Follow the [development setup guide](https://github.com/hotosm/tasking-manager/blob/develop/docs/developers/development-setup.md) to bring up a new TM3 instance. Navigate to the homepage and click **Contribute** while watching the browser console — if the page loads without errors and reports no projects, the empty database is ready.
+      </Step>
+
+      <Step title="Review and run the migration script">
+        The migration script is at `scripts/database/migration-from-tm2-postgres.sql`. Read the comments at the top of the file carefully — they document assumptions about your existing database name and permissions, and walk you through creating a temporary copy of the TM2 database.
+
+        ```bash
+        psql -U <your-user> -d <taskingmanager-new-db> \
+          -f scripts/database/migration-from-tm2-postgres.sql
+        ```
+      </Step>
+
+      <Step title="Rename and clean up databases">
+        After verifying the migration, rename the new database if needed:
+
+        ```bash
+        psql -U my-user -c "ALTER DATABASE taskingmanager RENAME TO my-tasking-manager;"
+        ```
+
+        Remove the temporary TM2 database only after confirming all data migrated correctly:
+
+        ```bash
+        # Only run this if you followed all instructions in the migration script
+        psql -U my-user -c "DROP DATABASE tm2;"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

@@ -1,0 +1,213 @@
+---
+title: "Teams and Organisations in Tasking Manager"
+sidebarTitle: "Teams & Orgs"
+description: "Manage contributor groups with teams and organisations. Assign roles, restrict project access, and create partner pages for coordinated mapping campaigns."
+---
+
+HOT Tasking Manager uses a two-level structure — **Organisations** and **Teams** — to group contributors, own projects, and control who can map or validate. Organisations are the top-level entities that host mapping campaigns and own projects. Teams are groups of users within (or across) organisations that can be assigned specific roles on individual projects. Together these constructs allow coordinators to run everything from small community events to large-scale disaster response operations with fine-grained access control.
+
+## Organisations
+
+An organisation in Tasking Manager is the administrative owner of projects and teams. Every project must be associated with exactly one organisation.
+
+### Organisation Fields
+
+| Field | Description |
+|---|---|
+| `id` | Auto-incremented integer primary key |
+| `name` | Unique display name (up to 512 characters) |
+| `slug` | URL-safe identifier, auto-generated from the name if not provided |
+| `logo` | URL of the organisation's logo image |
+| `description` | Free-text description of the organisation |
+| `url` | Organisation's public website |
+| `type` | Subscription tier (see below) |
+| `subscription_tier` | Numeric tier detail for billing purposes |
+
+### Organisation Types
+
+The `OrganisationType` enum (from `backend/models/postgis/statuses.py`) classifies organisations by their subscription arrangement:
+
+| Type | Value | Description |
+|---|---|---|
+| `FREE` | `1` | Organisation uses Tasking Manager at no cost |
+| `DISCOUNTED` | `2` | Organisation pays a reduced subscription fee |
+| `FULL_FEE` | `3` | Organisation pays the full subscription fee |
+
+### Organisation Managers
+
+Organisations have a many-to-many relationship with users through the `organisation_managers` join table. Any user listed as a manager of an organisation can:
+
+- Create and publish projects under that organisation
+- Manage teams belonging to the organisation
+- Invite other managers
+- Create and link campaigns to the organisation
+
+Managers are not a separate user role at the global level — the `organisation_managers` table grants management capability scoped to the specific organisation.
+
+### Creating an Organisation
+
+Send a `POST /organisations/` request as an admin user:
+
+```json
+{
+  "name": "MapAction",
+  "slug": "mapaction",
+  "logo": "https://example.org/logo.png",
+  "url": "https://mapaction.org",
+  "type": "FREE",
+  "managers": ["alice_osm", "bob_osm"]
+}
+```
+
+The `managers` array accepts OSM usernames. Each listed user must already have a Tasking Manager account (created on first OAuth login).
+
+## Teams
+
+A team is a named group of users belonging to an organisation. Teams are the primary mechanism for restricting project access — project managers assign teams to a project with a specific role (`MAPPER`, `VALIDATOR`, or `PROJECT_MANAGER`), and only members of those teams can perform the corresponding actions.
+
+### Team Fields
+
+| Field | Description |
+|---|---|
+| `id` | Auto-incremented integer primary key |
+| `organisation_id` | Foreign key to the owning organisation |
+| `name` | Team name (up to 512 characters) |
+| `logo` | Optional URL for a team logo |
+| `description` | Free-text team description |
+| `join_method` | How new members can join |
+| `visibility` | Whether the team is publicly listed |
+
+### Team Visibility
+
+The `TeamVisibility` enum controls whether a team appears in public listings:
+
+| Visibility | Value | Behaviour |
+|---|---|---|
+| `PUBLIC` | `0` | Team is visible to all users and can be discovered in search |
+| `PRIVATE` | `1` | Team is only visible to its members and organisation managers |
+
+### Team Join Methods
+
+The `TeamJoinMethod` enum controls how users can become members:
+
+| Join Method | Value | Behaviour |
+|---|---|---|
+| `ANY` | `0` | Any logged-in user can join immediately |
+| `BY_REQUEST` | `1` | Users request membership; a manager must approve |
+| `BY_INVITE` | `2` | Users can only join when invited by a manager |
+
+### Team Member Functions
+
+Each member of a team holds one of two internal functions within that team:
+
+| Function | Value | Description |
+|---|---|---|
+| `MANAGER` | `1` | Can approve join requests, invite users, and update team settings |
+| `MEMBER` | `2` | Regular contributor; can map or validate on projects the team is assigned to |
+
+The creator of a team is automatically assigned the `MANAGER` function.
+
+### Team Roles on Projects
+
+When a team is assigned to a project, it is given one of three roles via the `project_teams` join table. The `TeamRoles` enum defines these:
+
+| Role | Value | What it grants |
+|---|---|---|
+| `MAPPER` | `0` | Team members can lock tasks for mapping on the project |
+| `VALIDATOR` | `1` | Team members can lock tasks for validation on the project |
+| `PROJECT_MANAGER` | `2` | Team members can manage the project (edit settings, publish, etc.) |
+
+A single team can be assigned to a project multiple times with different roles — for example, a team could be both a `MAPPER` and `VALIDATOR` team on the same project.
+
+<Note>
+If a project has one or more teams with `MAPPER` role, only members of those teams (and admins) can map on it. Projects without any mapper team assignment default to `MappingPermission.ANY`, meaning any logged-in user can map.
+</Note>
+
+### Creating a Team
+
+Send a `POST /teams/` request:
+
+```json
+{
+  "name": "HOT Indonesia Validators",
+  "organisation_id": 7,
+  "description": "Experienced validators based in Indonesia",
+  "joinMethod": "BY_REQUEST",
+  "visibility": "PUBLIC"
+}
+```
+
+The authenticated user becomes the first `MANAGER` of the team.
+
+### Adding a Team to a Project
+
+Use `POST /projects/{project_id}/teams/` to assign a team:
+
+```json
+{
+  "teamId": 23,
+  "role": "VALIDATOR"
+}
+```
+
+## Campaigns
+
+Campaigns are thematic groupings that link multiple projects under a shared banner. A campaign has a name, optional logo, optional URL, and a description. Both organisations and projects can be associated with multiple campaigns through many-to-many join tables (`campaign_organisations` and `campaign_projects`).
+
+Common uses for campaigns:
+
+- Grouping all projects responding to a single disaster event
+- Collecting thematic mapping work across countries (e.g., a global road network campaign)
+- Representing a partner organisation's annual mapping goals
+
+Campaigns are managed through `POST /campaigns/` and can be listed at `GET /campaigns/`.
+
+## Partner Pages
+
+Partners are public-facing pages for organisations and groups running remote mapathons or sustained mapping programmes. A partner record includes:
+
+| Field | Description |
+|---|---|
+| `name` | Partner display name |
+| `primary_hashtag` | Main OSM changeset hashtag used by the partner |
+| `secondary_hashtag` | Optional secondary hashtag |
+| `logo_url` | Partner logo |
+| `permalink` | Unique URL slug for the partner page |
+| `mapswipe_group_id` | Links the partner to a MapSwipe group for integrated statistics |
+| `website_links` | Array of labelled URLs pointing to partner resources |
+| `current_projects` | Free-text or JSON listing active project IDs |
+
+The `mapswipe_group_id` field connects a partner page to the MapSwipe backend (`MAPSWIPE_API_URL`, defaulting to `https://backend.mapswipe.org/graphql/`), enabling MapSwipe contribution statistics to be displayed alongside Tasking Manager progress on the partner's public page.
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card
+    title="Organisations API"
+    icon="building"
+    href="/api/organisations"
+  >
+    Create, update, and list organisations via the REST API.
+  </Card>
+  <Card
+    title="Teams API"
+    icon="users"
+    href="/api/teams"
+  >
+    Manage teams, members, and project assignments via the REST API.
+  </Card>
+  <Card
+    title="Roles and Permissions"
+    icon="shield-halved"
+    href="/concepts/roles-and-permissions"
+  >
+    Understand how global user roles interact with organisation and team access.
+  </Card>
+  <Card
+    title="Projects and Tasks"
+    icon="map"
+    href="/concepts/projects-and-tasks"
+  >
+    Learn how projects are structured and how tasks are divided from an AoI.
+  </Card>
+</CardGroup>

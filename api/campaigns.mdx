@@ -1,0 +1,399 @@
+---
+title: "Campaigns API — Group Projects into Mapping Campaigns"
+sidebarTitle: "Campaigns"
+description: "REST endpoints for creating and managing campaigns that group related mapping projects and track progress across multiple areas."
+---
+
+Campaigns are thematic labels that can be applied across many projects and organisations, allowing coordinators to track mapping progress for a humanitarian response, a research initiative, or any other sustained effort. Creating or modifying a campaign requires the authenticated user to manage at least one organisation. Reading campaign data is public and requires no authentication.
+
+---
+
+## Campaign CRUD
+
+### List All Campaigns
+
+<br />
+
+**`GET /api/v2/campaigns/`**
+
+Returns every campaign in the system. No filtering is currently supported at this endpoint; use the organisation or project sub-resources to scope results.
+
+**Authentication:** Not required
+
+**Response** `200 OK`
+
+```json
+{
+  "campaigns": [
+    { "id": 1, "name": "Missing Maps" },
+    { "id": 2, "name": "West Africa Flood Response 2024" },
+    { "id": 3, "name": "OpenCities Africa" }
+  ]
+}
+```
+
+<CodeGroup>
+```bash cURL
+curl -X GET https://tasking-manager-api.example.com/api/v2/campaigns/
+```
+</CodeGroup>
+
+---
+
+### Create a Campaign
+
+<br />
+
+**`POST /api/v2/campaigns/`**
+
+Creates a new campaign. The authenticated user must be the manager of at least one organisation.
+
+**Authentication:** Required (organisation manager)
+
+**Request Body**
+
+<ParamField body="name" type="string" required>
+  Unique name for the campaign. Must not be an empty string.
+</ParamField>
+
+<ParamField body="logo" type="string">
+  URL of a logo image to display with the campaign.
+</ParamField>
+
+<ParamField body="url" type="string">
+  External URL for more information about the campaign.
+</ParamField>
+
+<ParamField body="description" type="string">
+  A free-text description of the campaign's scope and goals.
+</ParamField>
+
+<ParamField body="organisations" type="array">
+  Array of organisation IDs to associate with the campaign on creation.
+</ParamField>
+
+**Response** `201 Created`
+
+```json
+{ "campaignId": 5 }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `403`  | User does not manage any organisation |
+| `409`  | A campaign with this name already exists |
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://tasking-manager-api.example.com/api/v2/campaigns/ \
+  -H "Authorization: Token YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "West Africa Flood Response 2024",
+    "logo": "https://example.com/campaign-logo.png",
+    "url": "https://www.hotosm.org/campaigns/west-africa-flood-2024",
+    "description": "Coordinated mapping response to flooding events in West Africa.",
+    "organisations": [1, 4]
+  }'
+```
+</CodeGroup>
+
+---
+
+### Get Campaign by ID
+
+<br />
+
+**`GET /api/v2/campaigns/{campaign_id}/`**
+
+Retrieves full details of a single campaign, including its linked organisations.
+
+**Authentication:** Not required
+
+**Path Parameters**
+
+<ParamField path="campaign_id" type="integer" required>
+  The unique numeric campaign ID.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "id": 5,
+  "name": "West Africa Flood Response 2024",
+  "logo": "https://example.com/campaign-logo.png",
+  "url": "https://www.hotosm.org/campaigns/west-africa-flood-2024",
+  "description": "Coordinated mapping response to flooding events in West Africa.",
+  "organisations": [
+    {
+      "organisationId": 1,
+      "name": "Humanitarian OpenStreetMap Team",
+      "slug": "hot",
+      "logo": "https://cdn.hotosm.org/tasking-manager/uploads/hot-logo.png",
+      "url": "https://hotosm.org"
+    }
+  ]
+}
+```
+
+---
+
+### Update a Campaign
+
+<br />
+
+**`PATCH /api/v2/campaigns/{campaign_id}/`**
+
+Updates one or more fields on an existing campaign. The authenticated user must manage at least one organisation.
+
+**Authentication:** Required (organisation manager)
+
+**Path Parameters**
+
+<ParamField path="campaign_id" type="integer" required>
+  The unique numeric campaign ID.
+</ParamField>
+
+**Request Body** — all fields are optional
+
+<ParamField body="name" type="string">
+  New campaign name. Must be unique across all campaigns.
+</ParamField>
+
+<ParamField body="logo" type="string">
+  Updated logo URL.
+</ParamField>
+
+<ParamField body="url" type="string">
+  Updated external URL.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="organisations" type="array">
+  Replacement list of organisation IDs to associate with the campaign.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Campaign 5 updated" }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | Campaign name already exists |
+| `403`  | User does not manage any organisation |
+| `404`  | Campaign not found |
+
+---
+
+### Delete a Campaign
+
+<br />
+
+**`DELETE /api/v2/campaigns/{campaign_id}/`**
+
+Permanently deletes a campaign. The requesting user must manage at least one organisation.
+
+**Authentication:** Required (organisation manager)
+
+**Path Parameters**
+
+<ParamField path="campaign_id" type="integer" required>
+  The unique numeric campaign ID.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Campaign deleted" }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `403`  | User does not manage any organisation |
+| `404`  | Campaign not found |
+
+---
+
+### Message All Campaign Contributors
+
+<br />
+
+**`POST /api/v2/campaigns/{campaign_id}/actions/message-contributors/`**
+
+Sends an in-app message to every user who has contributed to any project in the campaign. This operation is dispatched asynchronously as a background task. Only platform admins may use this endpoint.
+
+**Authentication:** Required (ADMIN only)
+
+**Path Parameters**
+
+<ParamField path="campaign_id" type="integer" required>
+  ID of the campaign.
+</ParamField>
+
+**Request Body**
+
+<ParamField body="subject" type="string" required>
+  Subject line of the message. Must not be empty.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  Body text of the message. Must not be empty.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Message sent successfully" }
+```
+
+<Warning>
+  This endpoint is restricted to admins and triggers a bulk notification to potentially thousands of users. Use it with care.
+</Warning>
+
+---
+
+## Project–Campaign Associations
+
+Campaigns can be linked to individual projects independently of the organisation-level campaign associations. Project managers use these endpoints to tag their projects with one or more campaigns.
+
+### List Campaigns for a Project
+
+<br />
+
+**`GET /api/v2/projects/{project_id}/campaigns/`**
+
+Returns all campaigns associated with a given project.
+
+**Authentication:** Not required
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "campaigns": [
+    { "id": 1, "name": "Missing Maps" },
+    { "id": 5, "name": "West Africa Flood Response 2024" }
+  ]
+}
+```
+
+---
+
+### Add a Campaign to a Project
+
+<br />
+
+**`POST /api/v2/projects/{project_id}/campaigns/{campaign_id}/`**
+
+Links a campaign to a project. The requesting user must be a project manager for the specified project.
+
+**Authentication:** Required (project manager)
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+<ParamField path="campaign_id" type="integer" required>
+  ID of the campaign to link.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "Success": "campaign with id 5 assigned successfully for project with id 12"
+}
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | Campaign is already assigned to this project |
+| `403`  | User is not a project manager |
+
+---
+
+### Remove a Campaign from a Project
+
+<br />
+
+**`DELETE /api/v2/projects/{project_id}/campaigns/{campaign_id}/`**
+
+Removes the association between a campaign and a project. Does not delete the campaign.
+
+**Authentication:** Required (project manager)
+
+**Path Parameters**
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+<ParamField path="campaign_id" type="integer" required>
+  ID of the campaign to unlink.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Campaigns Deleted" }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `403`  | User is not a project manager |
+
+---
+
+## Data Models
+
+<ResponseField name="id" type="integer">
+  Unique numeric identifier for the campaign.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable campaign name (must be unique).
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL of the campaign logo image.
+</ResponseField>
+
+<ResponseField name="url" type="string">
+  External URL with additional campaign information.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Free-text description of the campaign.
+</ResponseField>
+
+<ResponseField name="organisations" type="array">
+  List of organisation DTOs associated with this campaign. Each item includes `organisationId`, `name`, `slug`, `logo`, and `url`.
+</ResponseField>
+
+<Tip>
+  When listing campaigns from `GET /api/v2/campaigns/`, only `id` and `name` are returned for each item. Fetch `GET /api/v2/campaigns/{campaign_id}/` to retrieve full details including linked organisations.
+</Tip>

@@ -1,0 +1,252 @@
+---
+title: "Authenticate with the Tasking Manager API"
+sidebarTitle: "Authentication"
+description: "Tasking Manager uses OSM OAuth2 for user authentication. Obtain a Bearer token to access protected API endpoints."
+---
+
+The Tasking Manager delegates authentication entirely to OpenStreetMap's OAuth 2.0 service. When a user grants permission, the Tasking Manager backend exchanges the authorization code for an OSM access token, looks up (or creates) the user record in its database, and issues a signed session token. That session token is what you include in every subsequent API request. All write operations — creating projects, locking tasks, managing teams — and most user-specific reads require a valid token.
+
+<Warning>
+  Keep your session token secret. Anyone who holds your token can act on your behalf within the Tasking Manager. Never commit tokens to source control, log them, or expose them in client-side code.
+</Warning>
+
+## OAuth 2.0 Login Flow
+
+<Steps>
+  <Step title="Register an OAuth 2 application on OpenStreetMap">
+    Before users can log in, your Tasking Manager instance needs credentials registered with OpenStreetMap.
+
+    1. Go to [openstreetmap.org](https://www.openstreetmap.org) and sign in.
+    2. Click your username in the top-right corner and select **My Settings**.
+    3. Navigate to **OAuth 2 applications** → **Register new application**.
+    4. Set the **Redirect URI** to the `/authorized` path of your Tasking Manager frontend. For local development this is:
+       ```
+       http://127.0.0.1:3000/authorized
+       ```
+       > `127.0.0.1` is required for local debugging — OSM does not allow `localhost` as a redirect host.
+    5. Enable the following permission scopes:
+       - **Read user preferences** (`read_prefs`)
+       - **Modify the map** (`write_api`)
+    6. Save your **Client ID** and **Client Secret**, then set them in `tasking-manager.env`:
+       ```bash
+       TM_CLIENT_ID=your-client-id
+       TM_CLIENT_SECRET=your-client-secret
+       TM_REDIRECT_URI=http://127.0.0.1:3000/authorized
+       TM_SCOPE=read_prefs write_api
+       ```
+  </Step>
+
+  <Step title="Initiate the login flow">
+    Direct the user to the Tasking Manager login endpoint. The API generates an OSM authorization URL and a CSRF state token.
+
+    ```
+    GET /api/v2/system/authentication/login/?redirect_uri={redirect_uri}
+    ```
+
+    <ParamField query="redirect_uri" type="string" default="value of TM_REDIRECT_URI">
+      The URI to redirect the user to after OSM authorization. Must match the redirect URI registered with your OSM OAuth 2 application.
+    </ParamField>
+
+    **Response:**
+
+    ```json
+    {
+      "auth_url": "https://www.openstreetmap.org/oauth2/authorize?client_id=...&redirect_uri=...&response_type=code&scope=read_prefs+write_api&state=...",
+      "state": "rAnD0mSt4t3StrIngUsedF0rCSRFProt3ct1on"
+    }
+    ```
+
+    Redirect the user's browser to the `auth_url`. OSM will present its own authorization screen where the user grants the requested scopes.
+  </Step>
+
+  <Step title="Handle the OSM callback">
+    After the user approves access, OSM redirects them back to your `redirect_uri` with an authorization code in the query string. Pass that code to the Tasking Manager callback endpoint.
+
+    ```
+    GET /api/v2/system/authentication/callback/?code={authorization_code}&redirect_uri={redirect_uri}
+    ```
+
+    <ParamField query="code" type="string" required>
+      The short-lived authorization code issued by OSM after the user grants permission.
+    </ParamField>
+
+    <ParamField query="redirect_uri" type="string" required>
+      Must match the redirect URI used in the previous step and the one registered with your OSM OAuth 2 application.
+    </ParamField>
+
+    <ParamField query="email_address" type="string">
+      Optional. An email address to associate with the user's Tasking Manager account for notifications.
+    </ParamField>
+
+    **Response (success):**
+
+    ```json
+    {
+      "username": "your_osm_username",
+      "session_token": "eyJ...<signed-session-token>",
+      "picture": "https://www.gravatar.com/avatar/...",
+      "session": { ... }
+    }
+    ```
+
+    Store the `session_token` value securely. This is what you include in the `Authorization` header of all subsequent API requests.
+
+    **Error responses:**
+
+    | Status | SubCode | Meaning |
+    |---|---|---|
+    | `400` | `InvalidData` | The `code` query parameter is missing. |
+    | `400` | `InvalidGrantError` | The authorization code is expired, invalid, or already used. |
+    | `502` | `TokenFetchError` | Could not fetch an access token from OSM. |
+    | `502` | `OSMServiceError` | Could not retrieve user details from the OSM API. |
+    | `502` | `AuthError` | An internal error occurred during user login. |
+  </Step>
+
+  <Step title="Use the token in API requests">
+    Include the session token in the `Authorization` header of every request to a protected endpoint. The scheme is `Token` (not `Bearer`):
+
+    ```
+    Authorization: Token <your-session-token>
+    ```
+
+    The token is a base64-encoded, signed string. The `TokenAuthBackend` middleware validates it on every request — it decodes the base64 payload, verifies the signature using the `TM_SECRET` key, and checks that the token has not expired (tokens are valid for 7 days / 604 800 seconds in production).
+
+    <CodeGroup>
+      ```bash curl
+      curl -H "Authorization: Token SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0" \
+        https://tasks.hotosm.org/api/v2/users/123/
+      ```
+
+      ```python Python
+      import requests
+
+      TOKEN = "SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0"
+      BASE_URL = "https://tasks.hotosm.org/api/v2"
+
+      headers = {"Authorization": f"Token {TOKEN}"}
+
+      response = requests.get(f"{BASE_URL}/users/123/", headers=headers)
+      print(response.json())
+      ```
+
+      ```javascript JavaScript
+      const TOKEN = "SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0";
+      const BASE_URL = "https://tasks.hotosm.org/api/v2";
+
+      const response = await fetch(`${BASE_URL}/users/123/`, {
+        headers: {
+          Authorization: `Token ${TOKEN}`,
+        },
+      });
+
+      const data = await response.json();
+      console.log(data);
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Getting a Token for Development or Testing
+
+You do not always need to run the full OAuth flow. There are three shortcuts for obtaining a token during development.
+
+### Option 1 — Copy the API Key from the browser UI (production or staging)
+
+1. Sign in to the Tasking Manager web application in your browser.
+2. Navigate to your user profile page.
+3. Enable **Expert Mode** in your account settings.
+4. Copy the token displayed in the **API Key** section.
+
+### Option 2 — Inspect a network request (production or staging)
+
+1. Open your browser's developer tools (**F12** / **⌥⌘I**).
+2. Go to the **Network** tab and perform any authenticated action on the Tasking Manager.
+3. Click on one of the requests, open the **Request Headers** panel, and copy the value of the `Authorization` header.
+
+### Option 3 — Generate a token from the command line (local development)
+
+The Tasking Manager CLI exposes a `gen_token` command that creates a valid signed session token for any OSM user ID:
+
+```bash
+flask gen_token -u <osm_user_id>
+```
+
+**Example:**
+
+```bash
+flask gen_token -u 99999999
+# Your base64 encoded session token: b'SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0'
+```
+
+Use the string between the single quotes as your token value. In Swagger UI, paste it into the authorization dialog as:
+
+```
+Token SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0
+```
+
+<Tip>
+  To find your OSM user ID, query your local database with `SELECT id FROM users WHERE username = 'your_osm_username';`, or open a changeset from your OSM edit history and look for the `uid` attribute in the changeset XML.
+</Tip>
+
+## Token Format
+
+Tasking Manager tokens are [itsdangerous](https://itsdangerous.palletsprojects.com/) `URLSafeTimedSerializer` payloads (containing the OSM user ID) that are then base64-encoded. The full value you put in the `Authorization` header looks like:
+
+```
+Token SWpFaS5EaEoxRlEubHRVC1DSTVJZ2hfalMc0xlalu3KRk5BUGk0
+```
+
+Tokens are signed with the `TM_SECRET` environment variable. In production this must be set to a long, random string. In local testing without `TM_SECRET` set, the fallback entropy `"un1testingmode"` is used — tokens generated in this mode will not be valid against a differently configured instance.
+
+## Which Endpoints Require Authentication
+
+**Authentication required** — all `POST`, `PUT`, `PATCH`, and `DELETE` requests, plus user-specific `GET` endpoints such as:
+
+- `GET /api/v2/users/{user_id}/` (own profile)
+- `GET /api/v2/notifications/`
+- `GET /api/v2/users/{user_id}/tasks/`
+
+**Publicly accessible** — read-only endpoints for public data, for example:
+
+- `GET /api/v2/projects/` — list public projects
+- `GET /api/v2/projects/{project_id}/` — fetch a public project
+- `GET /api/v2/system/statistics/` — platform-wide statistics
+- `GET /api/v2/system/heartbeat/` — health check
+- `GET /api/v2/countries/` — country list
+
+## Invalid Token Response
+
+When a token is missing, malformed, or expired, the API returns `401 Unauthorized` with the following body and a `WWW-Authenticate: Bearer` response header:
+
+```json
+{
+  "Error": "Token is expired or invalid",
+  "SubCode": "InvalidToken"
+}
+```
+
+<ResponseField name="Error" type="string">
+  Human-readable error message describing why authentication failed.
+</ResponseField>
+
+<ResponseField name="SubCode" type="string">
+  Machine-readable sub-code. `InvalidToken` means the token is absent, cannot be decoded, or the signature has expired.
+</ResponseField>
+
+## Email Verification
+
+Users can verify their email address independently of the main OAuth flow using a time-limited token sent to their inbox:
+
+```
+GET /api/v2/system/authentication/email/?username={username}&token={email_token}
+```
+
+<ParamField query="username" type="string" required>
+  The OSM display name of the user verifying their email.
+</ParamField>
+
+<ParamField query="token" type="string" required>
+  The verification token included in the email sent by the Tasking Manager. Valid for 24 hours (86 400 seconds).
+</ParamField>
+
+A `200 OK` response with `{ "Status": "OK" }` confirms the email address has been verified. A `403 Forbidden` is returned if the token is invalid, expired, or does not match the user's stored email address.

@@ -1,0 +1,657 @@
+---
+title: "Tasks API — Lock, Map, and Validate Mapping Tasks"
+sidebarTitle: "Tasks"
+description: "REST endpoints for retrieving task metadata, locking tasks for mapping or validation, submitting edits, and managing task state in Tasking Manager."
+---
+
+Tasks are the individual mapping units within a Tasking Manager project. Each task corresponds to a geographic tile or custom polygon that a mapper can lock, edit in an external editor (iD, JOSM, RAPID, etc.), and submit back with a status. Validators then review mapped tasks, marking them `VALIDATED` or sending them back as `INVALIDATED`. This page documents all task resource and action endpoints.
+
+All authenticated endpoints require an `Authorization: Token <session_token>` header. The API base path is `/api/v2`.
+
+---
+
+## Task Resources
+
+### List All Tasks for a Project
+
+**GET** `/api/v2/projects/{project_id}/tasks/`
+
+Returns all tasks for a project as a GeoJSON FeatureCollection. Private or draft projects enforce authentication. Optionally filter to a specific subset of task IDs, or download the result as a file.
+
+<CodeGroup>
+```bash Get all tasks
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```bash Get specific tasks
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/?tasks=1,2,5,10"
+```
+
+```bash Download as GeoJSON file
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/?as_file=true" \
+  -o 1234-tasks.geojson
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="tasks" type="string">
+  Comma-separated list of task IDs to retrieve (e.g., `1,2,5`). Omit to retrieve all tasks.
+</ParamField>
+
+<ParamField query="as_file" type="boolean" default="false">
+  When `true`, returns the response as a downloadable `application/geo+json` file.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | GeoJSON FeatureCollection of tasks. |
+| `403` | User not permitted to access private or draft project. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get a Single Task
+
+**GET** `/api/v2/projects/{project_id}/tasks/{task_id}/`
+
+Returns metadata for a single task, including its current status, lock holder, task history, and geometry. No authentication required for public projects.
+
+<CodeGroup>
+```bash Get task metadata
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/7/" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID the task belongs to.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  Unique task ID within the project.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="taskId" type="integer">
+  The task's numeric ID within the project.
+</ResponseField>
+
+<ResponseField name="taskStatus" type="string">
+  Current task status. One of: `READY`, `LOCKED_FOR_MAPPING`, `MAPPED`, `LOCKED_FOR_VALIDATION`, `VALIDATED`, `INVALIDATED`, `BADIMAGERY`, `SPLIT`.
+</ResponseField>
+
+<ResponseField name="lockHolder" type="string">
+  OSM username of the user who currently holds the lock, or `null` if unlocked.
+</ResponseField>
+
+<ResponseField name="taskHistory" type="array">
+  Ordered list of status-change history events for this task.
+</ResponseField>
+
+<ResponseField name="geometry" type="object">
+  GeoJSON geometry for the task boundary.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task metadata returned. |
+| `404` | Task or project not found. |
+| `500` | Internal server error. |
+
+---
+
+## Task Actions
+
+The task action endpoints form the core of the mapping and validation workflow. The typical lifecycle is:
+
+1. **Lock** the task (`lock-for-mapping`)
+2. **Edit** features in your chosen editor using the task's bounding box
+3. **Unlock** with a result status (`unlock-after-mapping`)
+
+Validation follows a similar pattern with `lock-for-validation` and `unlock-after-validation`.
+
+---
+
+### Lock Task for Mapping
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/lock-for-mapping/{task_id}/`
+
+Locks a `READY` or `INVALIDATED` task for the authenticated user to map. Only one task per project may be locked by a user at a time. Returns the updated task object.
+
+<Note>
+  If the project requires a license agreement and the user has not accepted it, this endpoint returns `409 Conflict` with `SubCode: UserLicenseError`.
+</Note>
+
+<CodeGroup>
+```bash Lock task for mapping
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/lock-for-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID the task belongs to.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  ID of the task to lock.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task locked. Returns updated task DTO. |
+| `400` | Invalid request. |
+| `401` | Missing or invalid token. |
+| `403` | Task cannot be locked (e.g., already locked, wrong status, insufficient mapping level). |
+| `404` | Task or project not found. |
+| `409` | User has not accepted the project's license terms. |
+| `500` | Internal server error. |
+
+---
+
+### Unlock After Mapping (Submit Result)
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/unlock-after-mapping/{task_id}/`
+
+Unlocks a task after the user has finished editing, submitting a new status. The mapper must currently hold the lock on the task.
+
+<CodeGroup>
+```bash Submit mapping as MAPPED
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/unlock-after-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "MAPPED",
+    "comment": "Mapped all buildings visible in imagery"
+  }'
+```
+
+```bash Submit as bad imagery
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/unlock-after-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "BADIMAGERY",
+    "comment": "Cloud cover prevents mapping"
+  }'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID the task belongs to.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  ID of the task to unlock.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="status" type="string" required>
+  The result status for the task. Valid values: `MAPPED` (edit complete), `BADIMAGERY` (imagery quality prevents mapping), `READY` (return to ready without mapping).
+</ParamField>
+
+<ParamField body="comment" type="string">
+  Optional text comment for the task history log.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task unlocked. Returns updated task DTO. |
+| `400` | Invalid request body or status value. |
+| `401` | Missing or invalid token. |
+| `403` | User does not hold the lock on this task. |
+| `404` | Task or project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Stop Mapping (Release Lock Without Submitting)
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/stop-mapping/{task_id}/`
+
+Releases the mapping lock without changing the task status. Use this when a mapper needs to abandon a task mid-session. The task reverts to its previous status.
+
+<CodeGroup>
+```bash Stop mapping
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/stop-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"comment": "Stopping for now, will continue later"}'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  ID of the locked task.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="comment" type="string">
+  Optional comment added to the task history.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Lock released. Returns updated task DTO. |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | User does not hold the lock on this task. |
+| `404` | Task or project not found. |
+
+---
+
+### Lock Tasks for Validation
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/lock-for-validation/`
+
+Locks one or more `MAPPED` tasks for validation by the authenticated user. Accepts an array of task IDs. Returns the list of locked tasks.
+
+<CodeGroup>
+```bash Lock tasks for validation
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/lock-for-validation/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"taskIds": [7, 8, 9]}'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="taskIds" type="array" required>
+  Array of integer task IDs to lock for validation. All tasks must be in `MAPPED` status.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Tasks locked. Returns list of locked task objects. |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | Tasks cannot be locked (wrong status, insufficient validator level, etc.). |
+| `404` | Project not found. |
+| `409` | User has not accepted the project's license terms. |
+| `500` | Internal server error. |
+
+---
+
+### Unlock After Validation (Submit Validation Result)
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/unlock-after-validation/`
+
+Submits validation results for one or more tasks currently locked for validation by the authenticated user.
+
+<CodeGroup>
+```bash Submit validation results
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/unlock-after-validation/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "validatedTasks": [
+      {
+        "taskId": 7,
+        "status": "VALIDATED",
+        "comment": "All buildings correctly mapped"
+      },
+      {
+        "taskId": 8,
+        "status": "INVALIDATED",
+        "comment": "Several buildings missed in the north-east corner"
+      }
+    ]
+  }'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="validatedTasks" type="array" required>
+  Array of validation result objects.
+
+  <Expandable title="validatedTasks item">
+    <ParamField body="taskId" type="integer" required>
+      ID of the task being validated.
+    </ParamField>
+    <ParamField body="status" type="string" required>
+      Validation outcome. Valid values: `VALIDATED` (mapping accepted), `INVALIDATED` (mapping needs revision).
+    </ParamField>
+    <ParamField body="comment" type="string">
+      Optional feedback comment for the original mapper.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Validation submitted. Returns list of updated task objects. |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | User does not hold the validation lock on one or more tasks. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Stop Validation (Release Validation Lock)
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/stop-validation/`
+
+Releases validation locks without submitting results, reverting locked tasks to their previous status. Used when a validator needs to abandon a session.
+
+<CodeGroup>
+```bash Stop validation
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/stop-validation/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resetTasks": [
+      {"taskId": 7, "comment": "Will return to validate later"},
+      {"taskId": 8}
+    ]
+  }'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="resetTasks" type="array" required>
+  Array of task objects to release.
+
+  <Expandable title="resetTasks item">
+    <ParamField body="taskId" type="integer" required>
+      ID of the task to release.
+    </ParamField>
+    <ParamField body="comment" type="string">
+      Optional comment added to the task history.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Locks released. Returns updated task list. |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | User does not hold the lock on one or more tasks. |
+| `404` | Project not found. |
+
+---
+
+### Reset Bad Imagery Tasks
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/reset-all-badimagery/`
+
+Resets all tasks in `BADIMAGERY` status back to `READY`, allowing them to be picked up for mapping again. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Reset bad imagery tasks
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/reset-all-badimagery/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "All bad imagery tasks marked ready for mapping"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
+### Reset All Tasks
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/reset-all/`
+
+Resets every task in the project back to `READY` status, preserving the task history. Requires project manager or admin role.
+
+<Warning>
+  This will undo all mapping and validation progress for the project. Task history entries are preserved but all task statuses return to `READY`.
+</Warning>
+
+<CodeGroup>
+```bash Reset all tasks
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/reset-all/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "All tasks reset"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
+### Split a Task
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/split/{task_id}/`
+
+Splits a single task into four smaller subtasks. Only tasks in `READY` status that cover a minimum area and have not reached the maximum zoom level can be split. Returns the newly created subtask objects.
+
+<Tip>
+  Task splitting is useful when a task covers a densely built-up area that is too large to map accurately in one session. Each of the four resulting tasks can be independently locked and mapped.
+</Tip>
+
+<CodeGroup>
+```bash Split a task
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/split/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  ID of the task to split. The task must be in `READY` status and large enough to subdivide.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task split. Returns the four new subtask objects. |
+| `400` | Invalid request. |
+| `401` | Missing or invalid token. |
+| `403` | Task cannot be split (too small, wrong status, or insufficient permissions). |
+| `404` | Task or project not found. |
+| `500` | Internal server error. |
+
+---
+
+## Task Statistics
+
+### Get Task Statistics
+
+**GET** `/api/v2/tasks/statistics/`
+
+Returns aggregated task completion statistics across the platform, filterable by date range, organisation, campaign, project, and country. Requires authentication. Date range cannot exceed 366 days.
+
+<Note>
+  This is a global statistics endpoint under `/api/v2/tasks/`, not under a specific project. Use the project statistics endpoint (`/api/v2/projects/{project_id}/statistics/`) for per-project counts.
+</Note>
+
+<CodeGroup>
+```bash Get task stats for a date range
+curl "https://tasking-manager-api.hotosm.org/api/v2/tasks/statistics/?startDate=2024-01-01&endDate=2024-06-30" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+
+```bash Filter by organisation and campaign
+curl "https://tasking-manager-api.hotosm.org/api/v2/tasks/statistics/?startDate=2024-01-01&organisationId=5&campaign=malaria" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Query Parameters
+
+<ParamField query="startDate" type="string" required>
+  Start date in `YYYY-MM-DD` format. Defines the lower bound of the date range.
+</ParamField>
+
+<ParamField query="endDate" type="string" default="today">
+  End date in `YYYY-MM-DD` format. Defaults to today. Cannot be earlier than `startDate`. Date range cannot exceed 366 days.
+</ParamField>
+
+<ParamField query="organisationId" type="string">
+  Filter by organisation ID.
+</ParamField>
+
+<ParamField query="organisationName" type="string">
+  Filter by organisation name.
+</ParamField>
+
+<ParamField query="campaign" type="string">
+  Filter by campaign name.
+</ParamField>
+
+<ParamField query="projectId" type="string">
+  Comma-separated project IDs to filter results.
+</ParamField>
+
+<ParamField query="country" type="string">
+  Filter by country name.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task statistics returned. |
+| `400` | Invalid date format or range exceeds 366 days. |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
+## Full Mapping Workflow Example
+
+The following example shows a complete lock → edit → submit workflow for a single task.
+
+<CodeGroup>
+```bash Step 1: Lock task for mapping
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/lock-for-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+# Response includes task geometry and editor URLs for iD, JOSM, etc.
+```
+
+```bash Step 2: Submit mapping result
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/unlock-after-mapping/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "MAPPED",
+    "comment": "All buildings and roads traced from Maxar imagery"
+  }'
+```
+
+```json Step 2 response (200 OK)
+{
+  "taskId": 7,
+  "projectId": 1234,
+  "taskStatus": "MAPPED",
+  "lockHolder": null,
+  "taskHistory": [
+    {
+      "historyId": 891,
+      "action": "STATE_CHANGE",
+      "actionText": "MAPPED",
+      "actionDate": "2024-03-15T14:22:00.000Z",
+      "actionBy": "mapper_username"
+    }
+  ]
+}
+```
+</CodeGroup>

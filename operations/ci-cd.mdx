@@ -1,0 +1,131 @@
+---
+title: "CI/CD Pipeline for Tasking Manager"
+sidebarTitle: "CI/CD"
+description: "HOT Tasking Manager uses CircleCI for continuous integration and deployment across production, staging, and community instances via git branch conventions."
+---
+
+HOT Tasking Manager uses CircleCI to manage both continuous integration (automated testing on every pull request and branch push) and continuous deployment (automated builds and infrastructure updates triggered by pushes to specific git branches). The project follows a trunk-based development model with `develop` as the primary integration branch.
+
+---
+
+## Branch-to-Environment Mapping
+
+Deployments are triggered by pushing to named deployment branches. Each branch is associated with a specific environment and CircleCI context containing that environment's secrets.
+
+| Environment | Branch |
+|-------------|--------|
+| Production | `deployment/hot-tasking-manager` |
+| Production (frontend only) | `deployment/hot-tasking-manager-frontend` |
+| Staging | `develop` |
+| TeachOSM | `deployment/teachosm-tasking-manager` |
+| Indonesia | `deployment/id-tasking-manager` |
+
+<Note>
+  Version tags are created from `master`/`main` after pull requests are reviewed and approved. The deployment branches are rebased from `develop` rather than merged, keeping a clean linear history.
+</Note>
+
+---
+
+## Deploy to Production
+
+<Steps>
+  <Step title="Ensure develop is up to date">
+    Pull the latest changes from the `develop` branch before rebasing:
+
+    ```bash
+    git checkout develop
+    git fetch
+    git pull origin develop
+    ```
+  </Step>
+
+  <Step title="Rebase and push the production branch">
+    Rebase `deployment/hot-tasking-manager` onto `develop` and push to trigger the full deployment pipeline:
+
+    ```bash
+    git checkout deployment/hot-tasking-manager
+    git pull origin deployment/hot-tasking-manager
+    git rebase develop
+    git push origin deployment/hot-tasking-manager
+    ```
+
+    CircleCI detects the push, runs tests, builds the backend container, and deploys it to the production Auto Scaling Group via CodeDeploy.
+  </Step>
+</Steps>
+
+### Frontend-Only Deployment
+
+If only frontend code changed, push `deployment/hot-tasking-manager-frontend` instead. This builds and syncs only the React assets to S3 — it is significantly faster and less disruptive than a full backend deployment because it does not replace EC2 instances:
+
+```bash
+git checkout deployment/hot-tasking-manager-frontend
+git rebase develop
+git push origin deployment/hot-tasking-manager-frontend
+```
+
+---
+
+## CircleCI Contexts and Environment Variables
+
+Each deployment environment has its own CircleCI context stored under **Organisation Settings → Contexts**. These contexts currently hold environment variables for frontend builds only. Backend environment variables are managed through the CloudFormation stack — see the [Deployment guide](/operations/deployment) for details.
+
+The following variables are configured per-environment context:
+
+| Variable | Description |
+|----------|-------------|
+| `OPSGENIE_API` | OpsGenie API key for deployment alerts |
+| `TM_APP_API_URL` | Backend API URL for this environment |
+| `TM_APP_API_VERSION` | API version string (e.g. `v2`) |
+| `TM_APP_BASE_URL` | Frontend base URL for this environment |
+| `TM_CONSUMER_KEY` | OSM OAuth consumer key (legacy) |
+| `TM_CONSUMER_SECRET` | OSM OAuth consumer secret (legacy) |
+| `TM_ENABLE_SERVICEWORKER` | Whether to register the service worker (`0` or `1`) |
+| `TM_MAPBOX_TOKEN` | Mapbox access token for map tile rendering |
+| `TM_MATOMO_ENDPOINT` | Matomo analytics tracker URL |
+| `TM_MATOMO_ID` | Matomo site ID |
+| `TM_ORG_CODE` | Short organisation code (e.g. `HOT`) |
+| `TM_ORG_NAME` | Full organisation name |
+| `TM_ORG_PRIVACY_POLICY_URL` | URL of the privacy policy page |
+| `TM_ORG_URL` | Organisation homepage URL |
+| `TM_SERVICE_DESK` | URL of the organisation's service desk |
+
+---
+
+## Automated Tests
+
+CircleCI runs backend and frontend tests on every pull request and every branch push. A dedicated CircleCI context named **tasking-manager-testing** provides the test database configuration:
+
+| Variable | Description |
+|----------|-------------|
+| `POSTGRES_DB` | Default database name (e.g. `tm`). The test setup script creates `test_<POSTGRES_DB>` automatically. |
+| `POSTGRES_ENDPOINT` | Hostname of the test PostgreSQL server |
+| `POSTGRES_USER` | PostgreSQL username for the test database |
+| `TM_ORG_CODE` | Required for tests that exercise template rendering (e.g. `test_variable_replacing` in `TestTemplateService`) |
+| `TM_ORG_NAME` | Required for the same template rendering tests |
+
+<Note>
+  The `POSTGRES_DB` variable must point to an existing default database (e.g. `tm`). The test runner creates a temporary database named `test_tm` during setup and drops it afterwards. Do not set `POSTGRES_DB` to the name of a database you cannot afford to lose.
+</Note>
+
+---
+
+## Refreshing the CircleCI Cache
+
+CircleCI caches the frontend `node_modules` directory between builds to speed up CI runs. If a build is behaving unexpectedly due to a stale cache (for example, after a major dependency upgrade), force a cache refresh by incrementing the `CACHEVERSION` environment variable in the CircleCI project settings.
+
+Set the value to `v{n}` where `{n}` is an integer incremented by 1 each time you wish to invalidate the cache (e.g. `v1`, `v2`, `v3`). All subsequent builds will perform a fresh `yarn install`.
+
+---
+
+## Branch Naming Conventions
+
+The project follows a consistent branch naming scheme:
+
+| Prefix | Purpose |
+|--------|---------|
+| `feature/` | New features under development |
+| `bugfix/` | Non-urgent bug fixes |
+| `hotfix/` | Urgent production fixes |
+| `deployment/` | Environment-specific deployment branches (never commit directly to these) |
+
+Development branches are opened as pull requests against `develop`. After review and CI passing, they are merged into `develop`. Deployment branches are only ever updated by rebasing from `develop` — direct commits to deployment branches are not permitted.

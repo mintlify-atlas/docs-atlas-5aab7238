@@ -1,0 +1,700 @@
+---
+title: "Projects API — Create and Manage Mapping Projects"
+sidebarTitle: "Projects"
+description: "REST endpoints for creating, retrieving, updating, and managing HOT Tasking Manager projects. Covers project CRUD, actions, statistics, and favorites."
+---
+
+Projects are the core unit of collaborative mapping in Tasking Manager. Each project defines an area of interest divided into tasks, a mapping difficulty, permitted editors, and metadata such as a campaign and organization. The endpoints below cover the full project lifecycle — from creating a draft to publishing, monitoring activity, and archiving.
+
+All authenticated endpoints expect an `Authorization: Token <session_token>` header. Responses are JSON unless otherwise noted. The API base path is `/api/v2`.
+
+---
+
+## Project CRUD
+
+### List and Search Projects
+
+<Note>
+  Authentication is optional. Unauthenticated requests return only published, public projects. Some filters (e.g., `createdByMe`, `managedByMe`) are silently ignored when no token is provided.
+</Note>
+
+**GET** `/api/v2/projects/`
+
+Returns a paginated list of projects matching the supplied filters. Supports ordering, filtering by mapping type, campaign, organisation, difficulty, status, country, and date ranges.
+
+<CodeGroup>
+```bash Search by campaign
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/?campaign=malaria&orderBy=priority&orderByType=ASC&page=1" \
+  -H "Accept-Language: en"
+```
+
+```bash Filter by mapping type
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/?mappingTypes=BUILDINGS,ROADS&difficulty=EASY&omitMapResults=true" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Query Parameters
+
+<ParamField query="difficulty" type="string">
+  Filter by project difficulty. Valid values: `EASY`, `MODERATE`, `CHALLENGING`.
+</ParamField>
+
+<ParamField query="action" type="string">
+  Filter by possible user action. Valid values: `map`, `validate`, `any`.
+</ParamField>
+
+<ParamField query="mappingTypes" type="string">
+  Comma-separated mapping types to filter by. Valid values: `ROADS`, `BUILDINGS`, `WATERWAYS`, `LAND_USE`, `OTHER`.
+</ParamField>
+
+<ParamField query="mappingTypesExact" type="boolean" default="false">
+  When `true`, only projects that match all listed mapping types are returned.
+</ParamField>
+
+<ParamField query="organisationName" type="string">
+  Filter by organisation name.
+</ParamField>
+
+<ParamField query="organisationId" type="integer">
+  Filter by organisation ID.
+</ParamField>
+
+<ParamField query="campaign" type="string">
+  Filter by campaign name.
+</ParamField>
+
+<ParamField query="teamId" type="integer">
+  Filter by team membership on the project.
+</ParamField>
+
+<ParamField query="country" type="string">
+  Filter by country name.
+</ParamField>
+
+<ParamField query="textSearch" type="string">
+  Free-text search across project name and description.
+</ParamField>
+
+<ParamField query="projectStatuses" type="string">
+  Comma-separated statuses. Valid values: `DRAFT`, `PUBLISHED`, `ARCHIVED`. Project managers can access `DRAFT` and `ARCHIVED`.
+</ParamField>
+
+<ParamField query="orderBy" type="string" default="priority">
+  Sort field. Valid values: `id`, `difficulty`, `priority`, `status`, `last_updated`, `due_date`.
+</ParamField>
+
+<ParamField query="orderByType" type="string" default="ASC">
+  Sort direction. Valid values: `ASC`, `DESC`.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number (1-indexed).
+</ParamField>
+
+<ParamField query="omitMapResults" type="boolean" default="false">
+  When `true`, omits project centroid geometries from the response, reducing payload size.
+</ParamField>
+
+<ParamField query="lastUpdatedFrom" type="string">
+  ISO 8601 date. Return only projects last updated on or after this date.
+</ParamField>
+
+<ParamField query="lastUpdatedTo" type="string">
+  ISO 8601 date. Return only projects last updated on or before this date.
+</ParamField>
+
+<ParamField query="createdFrom" type="string">
+  ISO 8601 date. Return only projects created on or after this date.
+</ParamField>
+
+<ParamField query="createdTo" type="string">
+  ISO 8601 date. Return only projects created on or before this date.
+</ParamField>
+
+<ParamField query="interests" type="string">
+  Comma-separated interest IDs to filter projects by interest category.
+</ParamField>
+
+<ParamField query="createdByMe" type="boolean" default="false">
+  Limit results to projects created by the authenticated user.
+</ParamField>
+
+<ParamField query="mappedByMe" type="boolean" default="false">
+  Limit results to projects the authenticated user has contributed to.
+</ParamField>
+
+<ParamField query="favoritedByMe" type="boolean" default="false">
+  Limit results to projects favorited by the authenticated user.
+</ParamField>
+
+<ParamField query="managedByMe" type="boolean" default="false">
+  Limit results to projects manageable by the authenticated user (excluding those they created).
+</ParamField>
+
+<ParamField query="basedOnMyInterests" type="boolean" default="false">
+  Filter projects based on the authenticated user's recorded interests.
+</ParamField>
+
+<ParamField query="downloadAsCSV" type="boolean">
+  When `true`, streams results as a CSV file instead of JSON. Cannot be combined with `omitMapResults=true`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Projects found. Returns paginated results object or empty lists when none match. |
+| `400` | Invalid query parameters or conflicting filter combination. |
+| `500` | Internal server error. |
+
+---
+
+### Create a Project
+
+**POST** `/api/v2/projects/`
+
+Creates a new draft project. Requires the caller to be a **Project Manager** or **Admin**.
+
+<CodeGroup>
+```bash Create project
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectName": "Humanitarian Building Mapping - Nairobi",
+    "organisation": 42,
+    "areaOfInterest": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[36.8,-1.3],[36.9,-1.3],[36.9,-1.2],[36.8,-1.2],[36.8,-1.3]]]
+          },
+          "properties": {}
+        }
+      ]
+    },
+    "tasks": {
+      "type": "FeatureCollection",
+      "features": []
+    },
+    "arbitraryTasks": false
+  }'
+```
+</CodeGroup>
+
+#### Request Body
+
+<ParamField body="projectName" type="string" required>
+  Human-readable project name.
+</ParamField>
+
+<ParamField body="areaOfInterest" type="object" required>
+  GeoJSON `FeatureCollection` defining the mapping boundary.
+</ParamField>
+
+<ParamField body="tasks" type="object">
+  GeoJSON `FeatureCollection` of pre-defined task geometries. Leave empty or omit to use grid-based task generation.
+</ParamField>
+
+<ParamField body="arbitraryTasks" type="boolean" default="false">
+  When `true`, tasks are not constrained to a grid.
+</ParamField>
+
+<ParamField body="organisation" type="integer">
+  ID of the organisation this project belongs to.
+</ParamField>
+
+<ParamField body="cloneFromProjectId" type="integer">
+  If provided, the new project clones settings from this existing project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Draft project created. Body: `{"projectId": <int>}` |
+| `400` | Invalid request body or GeoJSON. |
+| `401` | Missing or invalid token. |
+| `403` | User lacks Project Manager role. |
+
+---
+
+### Get a Project
+
+**GET** `/api/v2/projects/{project_id}/`
+
+Returns full project details including task grid, localized info, and mapping metadata. Authentication is optional; private or draft projects require a valid token and appropriate permissions.
+
+<CodeGroup>
+```bash Get project details
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+
+```bash Download as file
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/?as_file=true" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -o project.json
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="as_file" type="boolean" default="false">
+  When `true`, returns the project as a downloadable JSON file attachment.
+</ParamField>
+
+<ParamField query="abbreviated" type="boolean" default="false">
+  When `true`, returns only project status information (lightweight response).
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project found. Returns full `ProjectDTO` object. |
+| `403` | User is not permitted to view this private or draft project. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Update a Project
+
+**PATCH** `/api/v2/projects/{project_id}/`
+
+Updates an existing project. The caller must be a project manager or admin for this project. Requires a valid token.
+
+<CodeGroup>
+```bash Update project status and difficulty
+curl -X PATCH "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectStatus": "PUBLISHED",
+    "projectPriority": "HIGH",
+    "difficulty": "MODERATE",
+    "changesetComment": "#hotosm-project-1234",
+    "mappingTypes": ["BUILDINGS"],
+    "mappingEditors": ["ID", "JOSM"],
+    "defaultLocale": "en"
+  }'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="projectStatus" type="string">
+  New project status. Valid values: `DRAFT`, `PUBLISHED`, `ARCHIVED`.
+</ParamField>
+
+<ParamField body="projectPriority" type="string">
+  Priority level. Valid values: `URGENT`, `HIGH`, `MEDIUM`, `LOW`.
+</ParamField>
+
+<ParamField body="difficulty" type="string">
+  Mapper skill level required. Valid values: `EASY`, `MODERATE`, `CHALLENGING`.
+</ParamField>
+
+<ParamField body="defaultLocale" type="string">
+  Default locale code (e.g., `en`, `fr`).
+</ParamField>
+
+<ParamField body="changesetComment" type="string">
+  OSM changeset comment prepended to mapper edits (e.g., `#hotosm-project-1234`).
+</ParamField>
+
+<ParamField body="mappingTypes" type="array">
+  Array of mapping type strings. Valid values: `ROADS`, `BUILDINGS`, `WATERWAYS`, `LAND_USE`, `OTHER`.
+</ParamField>
+
+<ParamField body="mappingEditors" type="array">
+  Editors allowed for mapping. Valid values: `ID`, `JOSM`, `POTLATCH_2`, `FIELD_PAPERS`, `RAPID`, `CUSTOM`.
+</ParamField>
+
+<ParamField body="validationEditors" type="array">
+  Editors allowed for validation. Same values as `mappingEditors`.
+</ParamField>
+
+<ParamField body="private" type="boolean">
+  When `true`, only explicitly allowed users can see and contribute.
+</ParamField>
+
+<ParamField body="dueDate" type="string">
+  ISO 8601 datetime for the project's target completion date.
+</ParamField>
+
+<ParamField body="imagery" type="string">
+  Background imagery URL for mappers.
+</ParamField>
+
+<ParamField body="organisation" type="integer">
+  Organisation ID for this project.
+</ParamField>
+
+<ParamField body="campaign" type="string">
+  Campaign name to associate with this project.
+</ParamField>
+
+<ParamField body="countryTag" type="array">
+  Array of country name strings for geographic tagging.
+</ParamField>
+
+<ParamField body="allowedUsernames" type="array">
+  For private projects: list of OSM usernames who may access the project.
+</ParamField>
+
+<ParamField body="mapping_permission" type="string">
+  Who can map. Valid values: `ANY`, `TEAMS`.
+</ParamField>
+
+<ParamField body="validation_permission" type="string">
+  Who can validate. Valid values: `ANY`, `TEAMS`.
+</ParamField>
+
+<ParamField body="projectInfoLocales" type="array">
+  Array of localized project info objects with fields `locale`, `name`, `shortDescription`, `description`, `instructions`, `perTaskInstructions`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project updated. Body: `{"Status": "Updated"}` |
+| `400` | Invalid request body or GeoJSON. |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager for this project. |
+| `404` | Project not found. |
+
+---
+
+### Delete a Project
+
+**DELETE** `/api/v2/projects/{project_id}/`
+
+Permanently deletes a project. The caller must be a project manager or admin for this project.
+
+<Warning>
+  Deletion is irreversible. All associated task data and history will be removed. Ensure you have confirmed with your team before proceeding.
+</Warning>
+
+<CodeGroup>
+```bash Delete project
+curl -X DELETE "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project deleted. Body: `{"Success": "Project deleted"}` |
+| `401` | Missing or invalid token. |
+| `403` | User does not have permission to delete this project. |
+| `404` | Project not found. |
+
+---
+
+## Project Actions
+
+### Transfer Project Ownership
+
+**POST** `/api/v2/projects/{project_id}/actions/transfer-ownership/`
+
+Transfers ownership of a project to another user. The caller must be the current project manager or admin. Sends a notification to the new owner as a background task.
+
+<CodeGroup>
+```bash Transfer ownership
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/actions/transfer-ownership/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "new_owner_username"}'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="username" type="string" required>
+  OSM username of the user to transfer project ownership to.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Ownership transferred. Body: `{"Success": "Project Transferred"}` |
+| `400` | Username not provided. |
+| `401` | Missing or invalid token. |
+| `403` | User is not authorized to transfer this project. |
+
+---
+
+### Message All Contributors
+
+**POST** `/api/v2/projects/{project_id}/actions/message-contributors/`
+
+Sends an in-platform message to every user who has contributed to the project. Runs as a background task — the response is immediate while messages are dispatched asynchronously. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Send message to contributors
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/actions/message-contributors/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Thank you for mapping!",
+    "message": "Your contributions to project 1234 have helped us map 500 buildings."
+  }'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="subject" type="string" required>
+  Message subject line.
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  Message body text.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Messaging job started. Body: `{"Success": "Messages started"}` |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Background task failed to start. |
+
+---
+
+## Project Statistics
+
+### Get Project Statistics
+
+**GET** `/api/v2/projects/{project_id}/statistics/`
+
+Returns aggregated statistics for a project including counts of tasks by status (ready, mapped, validated, etc.) and contributor counts.
+
+<CodeGroup>
+```bash Get project statistics
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/statistics/"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="totalTasks" type="integer">
+  Total number of tasks in the project.
+</ResponseField>
+
+<ResponseField name="totalMappedTasks" type="integer">
+  Number of tasks in `MAPPED` status.
+</ResponseField>
+
+<ResponseField name="totalValidatedTasks" type="integer">
+  Number of tasks in `VALIDATED` status.
+</ResponseField>
+
+<ResponseField name="totalReadyTasks" type="integer">
+  Number of tasks in `READY` status.
+</ResponseField>
+
+<ResponseField name="totalInvalidatedTasks" type="integer">
+  Number of tasks in `INVALIDATED` status.
+</ResponseField>
+
+<ResponseField name="totalBadImagery" type="integer">
+  Number of tasks in `BADIMAGERY` status.
+</ResponseField>
+
+<ResponseField name="percentMapped" type="integer">
+  Percentage of tasks that have been mapped.
+</ResponseField>
+
+<ResponseField name="percentValidated" type="integer">
+  Percentage of tasks that have been validated.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Statistics returned. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Project Activity Log
+
+**GET** `/api/v2/projects/{project_id}/activities/`
+
+Returns a paginated log of user mapping and validation activity events for a project, ordered by most recent first. Private or draft projects require authentication and appropriate permissions.
+
+<CodeGroup>
+```bash Get activity log
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/activities/?page=1" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="page" type="integer" default="1">
+  Page number for paginated results. Minimum value: 1.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Activity log returned. |
+| `403` | User not permitted to view private/draft project. |
+| `404` | No activity found. |
+| `500` | Internal server error. |
+
+---
+
+## Favorites
+
+Favorites allow authenticated users to bookmark projects they care about. Each endpoint operates on the authenticated user's own favorites list.
+
+### Check Favorite Status
+
+**GET** `/api/v2/projects/{project_id}/favorite/`
+
+Returns whether the authenticated user has favorited the specified project. Requires a valid token.
+
+<CodeGroup>
+```bash Check favorite
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/favorite/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Response Fields
+
+<ResponseField name="favorited" type="boolean">
+  `true` if the authenticated user has favorited this project, `false` otherwise.
+</ResponseField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"favorited": true}` or `{"favorited": false}` |
+| `401` | Missing or invalid token. |
+
+---
+
+### Add Favorite
+
+**POST** `/api/v2/projects/{project_id}/favorite/`
+
+Adds the specified project to the authenticated user's favorites. Requires a valid token.
+
+<CodeGroup>
+```bash Add to favorites
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/favorite/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Favorite added. Body: `{"project_id": <int>}` |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
+### Remove Favorite
+
+**DELETE** `/api/v2/projects/{project_id}/favorite/`
+
+Removes the specified project from the authenticated user's favorites. Requires a valid token.
+
+<CodeGroup>
+```bash Remove from favorites
+curl -X DELETE "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/favorite/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Favorite removed. Body: `{"project_id": <int>}` |
+| `400` | Project was not in user's favorites. |
+| `401` | Missing or invalid token. |

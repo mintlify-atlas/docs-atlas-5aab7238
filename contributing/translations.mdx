@@ -1,0 +1,263 @@
+---
+title: "Translate HOT Tasking Manager into Your Language"
+sidebarTitle: "Translations"
+description: "HOT Tasking Manager supports 26+ languages. Learn how to contribute translations using Transifex and how to export locale strings for development."
+---
+
+HOT Tasking Manager currently supports **26 languages**, making it accessible to humanitarian mappers and project managers in communities around the world. Translations are managed through [Transifex](https://www.transifex.com/hotosm/tasking-manager/dashboard/), a collaborative localisation platform that requires no programming knowledge to use. Whether you are a fluent speaker wanting to improve a translation or a developer maintaining locale files, this guide covers everything you need.
+
+## Supported Languages
+
+The following languages ship with Tasking Manager by default. The codes correspond to locale files stored under `frontend/src/locales/`.
+
+```
+ar       عربى               (Arabic)
+cs       Čeština            (Czech)
+de       Deutsch            (German)
+el       Ελληνικά           (Greek)
+en       English            (English — source language)
+es       Español            (Spanish)
+fa_IR    فارسی              (Persian)
+fr       Français           (French)
+he       עברית              (Hebrew)
+hu       Magyar             (Hungarian)
+id       Indonesia          (Indonesian)
+it       Italiano           (Italian)
+ja       日本語              (Japanese)
+ko       한국어              (Korean)
+mg       Malagasy           (Malagasy)
+ml       Malayalam          (Malayalam)
+nl_NL    Nederlands         (Dutch)
+pt       Português          (Portuguese)
+pt_BR    Português (Brasil) (Brazilian Portuguese)
+ru       Русский язык       (Russian)
+sv       Svenska            (Swedish)
+sw       Kiswahili          (Swahili)
+tl       Filipino (Tagalog) (Filipino)
+tr       Türkçe             (Turkish)
+uk       Українська         (Ukrainian)
+zh_TW    繁體中文            (Traditional Chinese)
+```
+
+## Contributing a Translation
+
+<Steps>
+  <Step title="Create a Transifex account">
+    Visit [transifex.com](https://www.transifex.com/) and sign up for a free account. No coding experience is required.
+  </Step>
+
+  <Step title="Join the hotosm-translator team">
+    Navigate to the [Tasking Manager Transifex project](https://www.transifex.com/hotosm/tasking-manager/dashboard/) and apply to join the `hotosm-translator` team. Everybody is welcome — approval is typically fast.
+  </Step>
+
+  <Step title="Select your language and start translating">
+    Once accepted, choose your language from the project dashboard. You will see a list of resource files. The primary resource is the English source (`en.json`). Translate strings directly in the Transifex editor — you can work on as many or as few strings as you like, and your changes are saved automatically.
+  </Step>
+
+  <Step title="Review existing translations">
+    Even if a language is already partially translated, community review is invaluable. Look for strings marked as unreviewed or that appear machine-translated, and suggest improvements using Transifex's review workflow.
+  </Step>
+</Steps>
+
+<Note>
+Translators receive an automatic notification every time the HOT development team pushes new source strings to Transifex. Keep an eye on your Transifex notifications to stay up to date with strings that need translating.
+</Note>
+
+---
+
+## Developer Workflow
+
+For developers working on the frontend codebase, the translation pipeline involves exporting new strings from the source code, pushing them to Transifex, and pulling completed translations back before releases.
+
+### Export New Translatable Strings
+
+Whenever you add or modify user-facing strings in the frontend, regenerate the source locale file so translators can see the new content:
+
+```bash
+cd frontend
+yarn build-locales
+```
+
+This command scans all `messages.js` files in the frontend source and writes updated key/value pairs to `frontend/src/locales/en.json`. Include this file in your commit and Pull Request.
+
+<Tip>
+Run `yarn build-locales` before every PR that touches translatable strings. It keeps the source file in sync and prevents translators from working against a stale source.
+</Tip>
+
+### Setting Up the Transifex CLI
+
+Pushing and pulling translations programmatically requires the [Transifex CLI](https://developers.transifex.com/docs/cli) and a Transifex API key.
+
+Initialise the CLI from the project root:
+
+```bash
+tx init
+```
+
+The init wizard will prompt for the service URL (accept the default) and your Transifex credentials. Configuration is stored in `.tx/config`, which maps local locale files to Transifex resources.
+
+### Running the Transifex CLI
+
+<Accordion title="Option 1: Docker-based CLI (Recommended)">
+Use the provided helper scripts to run the CLI inside a Docker container — no local installation required:
+
+**macOS / Linux:**
+
+```bash
+# Download the latest translations from Transifex
+./scripts/transifex/tx-docker.sh pull
+
+# Push updated source strings (English) to Transifex
+./scripts/transifex/tx-docker.sh push -s
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Download the latest translations from Transifex
+./scripts/transifex/tx-docker.ps1 pull
+
+# Push updated source strings (English) to Transifex
+./scripts/transifex/tx-docker.ps1 push -s
+```
+
+The scripts mount your project directory into the container and handle system certificates for secure API communication. If you encounter certificate-related errors, update the certificate paths in the script or switch to the native CLI method.
+</Accordion>
+
+<Accordion title="Option 2: Native CLI install">
+**macOS / Linux:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/transifex/cli/master/install.sh | bash
+```
+
+**Windows:** Download the binary from the [Transifex CLI Releases](https://github.com/transifex/cli/releases) page.
+
+Once installed, use the CLI directly:
+
+```bash
+tx pull   # Pull all translations from Transifex
+tx push   # Push source strings to Transifex
+```
+
+Key arguments:
+
+| Argument | Effect |
+|---|---|
+| `-s` | Push/pull source files only (English) |
+| `-t` | Push/pull all translation files |
+| `-af --mode translator` | Pull all languages in translator mode (used before releases) |
+</Accordion>
+
+### Push New Source Strings
+
+After a PR with new translatable strings is merged to `develop`, push the updated English source to Transifex so translators are notified:
+
+```bash
+# Docker method
+./scripts/transifex/tx-docker.sh push -s
+
+# Native CLI method
+tx push -s
+```
+
+### Pull Latest Translations (Before a Release)
+
+Before cutting a major release, pull all available translations from Transifex into the locale directory:
+
+```bash
+# Docker method
+./scripts/transifex/tx-docker.sh pull
+
+# Native CLI method
+tx pull -af --mode translator
+```
+
+This command downloads all language files into `frontend/src/locales/`. Check the [Transifex dashboard](https://www.transifex.com/hotosm/tasking-manager/dashboard/) to review translation completion rates per language before deciding which locales to bundle.
+
+---
+
+## Restricting Available Languages
+
+If you are running your own Tasking Manager instance and want to offer only a subset of languages, set the following environment variables in your deployment configuration:
+
+```bash
+TM_SUPPORTED_LANGUAGES_CODES="en, fr, es, de"
+TM_SUPPORTED_LANGUAGES="English, Français, Español, Deutsch"
+```
+
+<Note>
+`TM_SUPPORTED_LANGUAGES_CODES` and `TM_SUPPORTED_LANGUAGES` must always contain **exactly the same number of entries**. A mismatch will cause the language selector to display incorrectly.
+</Note>
+
+---
+
+## Adding a New Language
+
+<Steps>
+  <Step title="Add the language on Transifex">
+    Open the [Tasking Manager Transifex dashboard](https://www.transifex.com/hotosm/tasking-manager/dashboard/) and add the new language to the project.
+  </Step>
+
+  <Step title="Update the Transifex config file">
+    Edit `.tx/config` and add a mapping for the new locale file:
+
+    ```ini
+    [tasking-manager.version-4]
+    trans.ml = frontend/src/locales/ml.json
+    ```
+
+    Replace `ml` with the appropriate BCP-47 language code for your language.
+  </Step>
+
+  <Step title="Add the language to the backend configuration">
+    Open `backend/config.py` and add the language code and display name to the `SUPPORTED_LANGUAGES` dictionary:
+
+    ```python
+    SUPPORTED_LANGUAGES: dict = {
+        "codes": os.getenv(
+            "TM_SUPPORTED_LANGUAGES_CODES",
+            ", ".join([
+                # ... existing codes ...
+                "ml",   # ← add the new code here
+            ]),
+        ),
+        "languages": os.getenv(
+            "TM_SUPPORTED_LANGUAGES",
+            ", ".join([
+                # ... existing names ...
+                "Malayalam",  # ← add the display name here (same position)
+            ]),
+        ),
+    }
+    ```
+  </Step>
+
+  <Step title="Update the frontend internationalisation files">
+    Add the new locale to `frontend/src/utils/internationalization.js` by appending it to the `supportedLocales` array, and add any required polyfills in `frontend/src/utils/polyfill.js`.
+  </Step>
+
+  <Step title="Handle iso-countries-languages (if needed)">
+    If the new language is not yet supported by the [iso-countries-languages](https://github.com/hotosm/iso-countries-languages) package used by Tasking Manager, update that library and publish a new version before completing the integration.
+  </Step>
+
+  <Step title="Pull and commit the locale file">
+    Pull the locale file from Transifex to create the JSON file locally, then commit everything together:
+
+    ```bash
+    tx pull -l LANGUAGE_CODE
+    git add .tx/config frontend/src/locales/LANGUAGE_CODE.json backend/config.py \
+            frontend/src/utils/internationalization.js frontend/src/utils/polyfill.js
+    git commit -m "Add LANGUAGE_NAME (LANGUAGE_CODE) language support"
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Helpful Links
+
+- [Tasking Manager Transifex Dashboard](https://www.transifex.com/hotosm/tasking-manager/dashboard/)
+- [Transifex CLI Documentation](https://developers.transifex.com/docs/cli)
+- [Transifex CLI GitHub Repository](https://github.com/transifex/cli)
+- [iso-countries-languages (HOT fork)](https://github.com/hotosm/iso-countries-languages)

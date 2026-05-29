@@ -1,0 +1,247 @@
+---
+title: "Deploy Tasking Manager with Docker or AWS"
+sidebarTitle: "Deployment"
+description: "Deploy HOT Tasking Manager using Docker Compose for self-hosted setups or AWS CloudFormation for production-grade infrastructure with auto-scaling."
+---
+
+HOT Tasking Manager supports two primary deployment paths: Docker Compose for quick self-hosted installations, and AWS CloudFormation for production-grade infrastructure with auto-scaling, load balancing, and managed database services. Choose Docker Compose if you want to run Tasking Manager on your own server with minimal cloud dependency, or AWS CloudFormation if you need a scalable, resilient deployment aligned with HOT's own production setup.
+
+<Note>
+  Before deploying, you must register an OAuth2 application on OpenStreetMap to obtain a `TM_CLIENT_ID`, `TM_CLIENT_SECRET`, and `TM_REDIRECT_URI`. Visit [openstreetmap.org](https://www.openstreetmap.org/oauth2/applications) to create your application and set the redirect URI to match your deployed frontend URL (e.g. `https://tasks.example.org/authorized`).
+</Note>
+
+<Tabs>
+  <Tab title="Docker Compose">
+    ## Docker Compose Deployment
+
+    Docker Compose is the fastest way to run a self-hosted Tasking Manager. The `docker-compose.yml` at the root of the repository defines six services: `traefik` (reverse proxy), `tm-frontend` (React), `tm-backend` (FastAPI), `tm-migration` (Alembic), `tm-cron-jobs`, and `tm-db` (PostGIS).
+
+    ### Prerequisites
+
+    - Docker Engine 20.10.0 or newer
+    - Docker Compose v2.0.0 or newer
+
+    <Steps>
+      <Step title="Copy the environment file">
+        Copy `example.env` to `tasking-manager.env` in the repository root and open it in an editor.
+
+        ```bash
+        cp example.env tasking-manager.env
+        ```
+      </Step>
+
+      <Step title="Configure required variables">
+        At a minimum, set your OSM OAuth2 credentials and the shared application secret:
+
+        ```bash
+        # OSM OAuth2 application credentials
+        TM_CLIENT_ID=your-client-id
+        TM_CLIENT_SECRET=your-client-secret
+        TM_REDIRECT_URI=http://127.0.0.1:3000/authorized
+
+        # Shared secret between frontend and backend
+        TM_SECRET=s0m3l0ngr4nd0mstr1ng-b3cr34tiv3
+        ```
+
+        For production, replace `127.0.0.1:3000` throughout with your public domain and set `TM_APP_BASE_URL` and `TM_APP_API_URL` accordingly.
+      </Step>
+
+      <Step title="Start all services">
+        Use the `--env-file` flag to avoid Docker Compose's default `.env` file parsing behaviour, which can cause database health-check warnings:
+
+        ```bash
+        docker compose --env-file tasking-manager.env up -d
+        ```
+
+        The `tm-migration` container runs Alembic migrations on startup and exits cleanly before `tm-backend` begins accepting traffic.
+      </Step>
+
+      <Step title="Verify the deployment">
+        Once all containers are healthy, the services are reachable at:
+
+        | Service | URL |
+        |---------|-----|
+        | Frontend | `http://127.0.0.1:3000` |
+        | Backend API | `http://127.0.0.1:3000/api/docs` |
+
+        Traefik routes requests based on path prefix: `/api/` goes to `tm-backend` on port 5000, and everything else goes to `tm-frontend` on port 3000.
+      </Step>
+    </Steps>
+
+    ### Using an External PostgreSQL Database
+
+    If you have an existing PostgreSQL/PostGIS instance (self-hosted or managed), set `POSTGRES_ENDPOINT` to its hostname and omit the `tm-db` service. The backend connects using the `postgresql+asyncpg` driver.
+
+    ```bash
+    POSTGRES_ENDPOINT=your-db-host.example.com
+    POSTGRES_PORT=5432
+    POSTGRES_DB=tasking-manager
+    POSTGRES_USER=tm
+    POSTGRES_PASSWORD=your-password
+    ```
+
+    Alternatively, supply a full connection JSON string that takes precedence over all individual variables:
+
+    ```bash
+    DB_CONNECT_PARAM_JSON='{"username":"tm","password":"myprivatesecret","host":"tm4-database.example.org","port":"5432","dbname":"taskingmanager"}'
+    ```
+
+    ### Frontend-Only Deployment
+
+    To run only the React frontend without the backend (for example, when pointing at a remote API), bring up just the `tm-frontend` service:
+
+    ```bash
+    docker compose --env-file tasking-manager.env up -d tm-frontend
+    ```
+
+    Set `TM_APP_API_URL` in your env file to the URL of the remote backend API.
+
+    ### Using the Override File
+
+    A sample override file `docker-compose.override.sample.yml` is included for local development. It exposes additional ports and enables live reload:
+
+    ```bash
+    cp docker-compose.override.sample.yml docker-compose.override.yml
+    docker compose --env-file tasking-manager.env up -d
+    ```
+
+    The override binds `tm-db` to host port `5433`, `tm-backend` to port `5000`, and `tm-frontend` to port `8000` with a volume mount for live reload.
+
+    ### Traefik Version Note
+
+    The `docker-compose.yml` uses Traefik v3.6.1 by default. If you are running Docker Engine older than 20.10 and experience compatibility issues, you can downgrade to `traefik:v2.10` in the compose file. See the [Traefik v2 to v3 migration guide](https://doc.traefik.io/traefik/migration/v2-to-v3/) for details.
+  </Tab>
+
+  <Tab title="AWS CloudFormation">
+    ## AWS CloudFormation Deployment
+
+    HOT's production infrastructure is defined as a CloudFormation template in `scripts/aws/cloudformation/tasking-manager.template.js`. This template provisions an Auto Scaling Group, Application Load Balancer, RDS PostgreSQL, S3 bucket, and CloudFront distribution in a single stack.
+
+    ### Prerequisites
+
+    - An AWS VPC named `hotosm-network-production-default-vpc-<region>` with the following security groups:
+      - `hotosm-network-production-<NetworkEnvironment>-ec2s-security-group`
+      - `hotosm-network-production-<NetworkEnvironment>-elbs-security-group`
+    - AWS Simple Email Service (SES) domain and SMTP credentials configured for your sending domain
+    - The [`cfn-config`](https://github.com/mapbox/cfn-config) CLI tool installed
+    - An S3 bucket for storing CloudFormation JSON configuration files
+
+    ### Backend Stack Deployment
+
+    <Steps>
+      <Step title="Create the CloudFormation stack">
+        Run the following command to create a new stack. Replace `<stack-name>`, `<cfn-template-bucket>`, and `<cfn-config-bucket>` with your values:
+
+        ```bash
+        cfn-config create <stack-name> \
+          scripts/aws/cloudformation/tasking-manager.template.js \
+          -t <cfn-template-bucket> \
+          -c <cfn-config-bucket>
+        ```
+
+        You will be prompted to supply values for all CloudFormation parameters.
+      </Step>
+
+      <Step title="Supply key parameters">
+        The most important parameters to configure are:
+
+        | Parameter | Description |
+        |-----------|-------------|
+        | `NetworkEnvironment` | `staging` or `production` — determines security groups |
+        | `AutoscalingPolicy` | `development`, `demo`, or `production` — sets min/max instance count |
+        | `GitSha` | Commit hash from the repository to deploy |
+        | `DatabaseInstanceType` | AWS RDS instance tier (e.g. `db.t3.xlarge`) |
+        | `DatabaseDiskSize` | RDS disk size in GB (minimum 100 recommended for better IOPS) |
+        | `TaskingManagerURL` | Public URL without protocol (e.g. `tasks.hotosm.org`) |
+        | `SSLCertificateIdentifier` | ID of the ACM SSL certificate for HTTPS |
+        | `TaskingManagerOAuthClientID` | OSM OAuth2 client ID (`TM_CLIENT_ID`) |
+        | `TaskingManagerOAuthClientSecret` | OSM OAuth2 client secret (`TM_CLIENT_SECRET`) |
+        | `TaskingManagerSecret` | Shared secret between frontend and backend (`TM_SECRET`) |
+        | `TaskingManagerEmailFromAddress` | Sender address for automated emails |
+        | `TaskingManagerSMTPHost` | AWS SES SMTP endpoint hostname |
+      </Step>
+    </Steps>
+
+    ### Frontend S3 Deployment
+
+    After the backend stack is created, deploy the React frontend to the S3 bucket created by CloudFormation (`TaskingManagerReactBucket`):
+
+    <Steps>
+      <Step title="Configure and build the frontend">
+        Set the required environment variables in `./frontend/.env`, then build:
+
+        ```bash
+        cd ./frontend/
+        yarn
+        yarn build
+        ```
+      </Step>
+
+      <Step title="Sync to S3">
+        Replace `<TaskingManagerReactBucket>` with the bucket name from your CloudFormation stack outputs:
+
+        ```bash
+        aws s3 sync build/ s3://<TaskingManagerReactBucket> --delete
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      The frontend S3 deployment step is optional if you have set up [CI/CD](/operations/ci-cd) — CircleCI handles frontend builds and S3 syncs automatically on every push to a deployment branch.
+    </Note>
+
+    ## Performing Updates
+
+    When updating an existing deployment, always follow these steps in order to prevent data loss and minimise downtime.
+
+    <Steps>
+      <Step title="Backup the database">
+        Take a snapshot in the RDS console, or run a manual dump from a server on the same VPC:
+
+        ```bash
+        PGPASSWORD=<PostgresPassword> pg_dump -Fc \
+          -h <RDS_URI> \
+          -U <PostgresUser> \
+          -f backup.dump \
+          <PostgresDB>
+        ```
+      </Step>
+
+      <Step title="Update backend infrastructure (if CloudFormation template changed)">
+        If the update includes changes to the CloudFormation template or environment variables, update the stack before deploying code. Only staff with sufficient AWS privileges should run this step:
+
+        ```bash
+        cfn-config update tm4-production \
+          scripts/aws/cloudformation/tasking-manager.template.js \
+          -t hot-cfn-config -c hot-cfn-config
+        ```
+      </Step>
+
+      <Step title="Deploy code to production">
+        Pull the latest changes, then rebase and push the deployment branch:
+
+        ```bash
+        git checkout develop
+        git fetch
+        git pull origin develop
+        git checkout deployment/hot-tasking-manager
+        git pull origin deployment/hot-tasking-manager
+        git rebase develop
+        git push origin deployment/hot-tasking-manager
+        ```
+
+        CircleCI detects the push and triggers the full deployment pipeline.
+      </Step>
+
+      <Step title="Frontend-only update (optional)">
+        If only frontend code changed, push `deployment/hot-tasking-manager-frontend` instead. This is significantly faster and less disruptive because it does not replace compute resources:
+
+        ```bash
+        git checkout deployment/hot-tasking-manager-frontend
+        git rebase develop
+        git push origin deployment/hot-tasking-manager-frontend
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

@@ -1,0 +1,460 @@
+---
+title: "Organisations API — Manage Mapping Organisations"
+sidebarTitle: "Organisations"
+description: "REST endpoints for creating organisations, managing members, and linking campaigns in HOT Tasking Manager."
+---
+
+Organisations are the top-level entities in HOT Tasking Manager. Each organisation owns teams and projects, and is administered by one or more designated managers. An organisation has a type (`FREE`, `DISCOUNTED`, or `FULL_FEE`) that reflects its subscription tier. The endpoints below cover full CRUD operations on organisations as well as managing the campaigns linked to them.
+
+---
+
+## Organisation CRUD
+
+### List Organisations
+
+<br />
+
+**`GET /api/v2/organisations/`**
+
+Returns all organisations. Optionally filter by a manager's user ID or suppress the manager list and statistics from the response to reduce payload size.
+
+**Authentication:** Optional. Filtering by `manager_user_id` requires authentication.
+
+**Query Parameters**
+
+<ParamField query="manager_user_id" type="integer">
+  Return only organisations managed by this user ID. Requires an authenticated session.
+</ParamField>
+
+<ParamField query="omitManagerList" type="boolean" default="false">
+  When `true`, each organisation object omits the `managers` array.
+</ParamField>
+
+<ParamField query="omitOrgStats" type="boolean" default="true">
+  When `false`, year-to-date statistics are appended to each organisation. Defaults to `true` to keep responses lightweight.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "organisations": [
+    {
+      "organisationId": 1,
+      "name": "Humanitarian OpenStreetMap Team",
+      "slug": "hot",
+      "logo": "https://cdn.hotosm.org/tasking-manager/uploads/hot-logo.png",
+      "url": "https://hotosm.org",
+      "description": "HOT works to map the most vulnerable places.",
+      "type": "FREE",
+      "subscriptionTier": null,
+      "managers": [
+        {
+          "username": "hotadmin",
+          "pictureUrl": "https://example.com/avatar.jpg"
+        }
+      ]
+    }
+  ]
+}
+```
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://tasking-manager-api.example.com/api/v2/organisations/?omitManagerList=false" \
+  -H "Authorization: Token YOUR_SESSION_TOKEN"
+```
+</CodeGroup>
+
+---
+
+### Create an Organisation
+
+<br />
+
+**`POST /api/v2/organisations/`**
+
+Creates a new organisation. Only users with the `ADMIN` role can create organisations. The creating admin is automatically added to the managers list.
+
+**Authentication:** Required (ADMIN only)
+
+**Request Body**
+
+<ParamField body="name" type="string" required>
+  Unique display name for the organisation (max 512 characters).
+</ParamField>
+
+<ParamField body="slug" type="string">
+  URL-safe identifier. Auto-generated from `name` if omitted.
+</ParamField>
+
+<ParamField body="logo" type="string">
+  URL of the organisation's logo image.
+</ParamField>
+
+<ParamField body="url" type="string">
+  Organisation website URL.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Short description of the organisation.
+</ParamField>
+
+<ParamField body="managers" type="array" required>
+  Array of usernames to assign as organisation managers. The creating admin is appended automatically.
+</ParamField>
+
+<ParamField body="type" type="string">
+  Subscription type: `FREE`, `DISCOUNTED`, or `FULL_FEE`. Defaults to `FREE`.
+</ParamField>
+
+<ParamField body="subscriptionTier" type="integer">
+  Numeric subscription tier (admin-only field).
+</ParamField>
+
+**Response** `201 Created`
+
+```json
+{ "organisationId": 7 }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | Invalid request payload |
+| `402`  | Organisation name already exists |
+| `403`  | User is not an admin |
+
+<Warning>
+  Organisation `type` and `subscriptionTier` can only be set or changed by admin users. Non-admin managers will have those fields preserved from their existing values on update.
+</Warning>
+
+---
+
+### Get Organisation by ID
+
+<br />
+
+**`GET /api/v2/organisations/{organisation_id}/`**
+
+Retrieves full details of a single organisation by its numeric ID.
+
+**Authentication:** Optional
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  The unique numeric organisation ID.
+</ParamField>
+
+**Query Parameters**
+
+<ParamField query="omitManagerList" type="boolean" default="false">
+  Set to `true` to exclude the managers list from the response.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "organisationId": 1,
+  "name": "Humanitarian OpenStreetMap Team",
+  "slug": "hot",
+  "logo": "https://cdn.hotosm.org/tasking-manager/uploads/hot-logo.png",
+  "url": "https://hotosm.org",
+  "description": "HOT works to map the most vulnerable places.",
+  "type": "FREE",
+  "subscriptionTier": null,
+  "managers": [
+    {
+      "username": "hotadmin",
+      "pictureUrl": "https://example.com/avatar.jpg"
+    }
+  ]
+}
+```
+
+---
+
+### Get Organisation by Slug
+
+<br />
+
+**`GET /api/v2/organisations/{slug}/`**
+
+Retrieves a single organisation using its URL slug instead of its numeric ID. Useful for constructing human-readable links.
+
+**Authentication:** Optional
+
+**Path Parameters**
+
+<ParamField path="slug" type="string" required>
+  The URL-safe slug for the organisation (e.g. `hot`).
+</ParamField>
+
+**Query Parameters**
+
+<ParamField query="omitManagerList" type="boolean" default="false">
+  Set to `true` to exclude the managers list.
+</ParamField>
+
+**Response** `200 OK` — same shape as [Get Organisation by ID](#get-organisation-by-id).
+
+---
+
+### Get Organisation Statistics
+
+<br />
+
+**`GET /api/v2/organisations/{organisation_id}/statistics/`**
+
+Returns project and active-task statistics for the organisation.
+
+**Authentication:** Optional
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  The unique numeric organisation ID.
+</ParamField>
+
+**Response** `200 OK`
+
+<ResponseField name="organisationId" type="integer">
+  ID of the organisation.
+</ResponseField>
+
+<ResponseField name="projects" type="object">
+  Aggregate project counts (published, draft, archived).
+</ResponseField>
+
+<ResponseField name="activeTasks" type="object">
+  Aggregate counts of tasks by status across all published projects.
+</ResponseField>
+
+---
+
+### Update an Organisation
+
+<br />
+
+**`PATCH /api/v2/organisations/{organisation_id}/`**
+
+Updates fields on an existing organisation. The requesting user must be an organisation admin or a platform admin.
+
+**Authentication:** Required (org admin or ADMIN)
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  The unique numeric organisation ID.
+</ParamField>
+
+**Request Body** — all fields are optional
+
+<ParamField body="name" type="string">
+  New display name.
+</ParamField>
+
+<ParamField body="slug" type="string">
+  New URL slug.
+</ParamField>
+
+<ParamField body="logo" type="string">
+  New logo URL.
+</ParamField>
+
+<ParamField body="url" type="string">
+  Updated website URL.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+<ParamField body="managers" type="array">
+  Replacement list of manager usernames. Existing managers not included in this list will be removed.
+</ParamField>
+
+<ParamField body="type" type="string">
+  `FREE`, `DISCOUNTED`, or `FULL_FEE`. Admin-only — ignored for non-admin requests.
+</ParamField>
+
+<ParamField body="subscriptionTier" type="integer">
+  Numeric tier. Admin-only — ignored for non-admin requests.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Status": "Updated" }
+```
+
+---
+
+### Delete an Organisation
+
+<br />
+
+**`DELETE /api/v2/organisations/{organisation_id}/`**
+
+Permanently deletes an organisation. The organisation must have no associated projects or teams before it can be removed.
+
+**Authentication:** Required (org admin or ADMIN)
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  The unique numeric organisation ID.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Organisation deleted" }
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `401`  | Missing or invalid token |
+| `403`  | User is not an org admin or the organisation still has projects/teams |
+| `404`  | Organisation not found |
+
+<Note>
+  An organisation cannot be deleted while it still owns projects or teams. Remove all projects and teams first, or archive projects before attempting deletion.
+</Note>
+
+---
+
+## Organisation Campaigns
+
+Campaigns can be linked to organisations to group thematically related mapping efforts. The association is many-to-many: a campaign can belong to multiple organisations and vice versa.
+
+### List Campaigns for an Organisation
+
+<br />
+
+**`GET /api/v2/organisations/{organisation_id}/campaigns/`**
+
+Returns all campaigns associated with the given organisation.
+
+**Authentication:** Optional
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  ID of the organisation.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "campaigns": [
+    { "id": 3, "name": "West Africa Flood Response 2024" },
+    { "id": 7, "name": "Missing Maps" }
+  ]
+}
+```
+
+---
+
+### Link a Campaign to an Organisation
+
+<br />
+
+**`POST /api/v2/organisations/{organisation_id}/campaigns/{campaign_id}/`**
+
+Associates an existing campaign with the specified organisation. The requesting user must be an organisation manager.
+
+**Authentication:** Required (org manager)
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  ID of the organisation.
+</ParamField>
+
+<ParamField path="campaign_id" type="integer" required>
+  ID of the campaign to link.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{
+  "Success": "campaign with id 3 assigned for organisation with id 1"
+}
+```
+
+**Error Responses**
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | Campaign is already linked to this organisation |
+| `403`  | User is not an org manager |
+
+---
+
+### Unlink a Campaign from an Organisation
+
+<br />
+
+**`DELETE /api/v2/organisations/{organisation_id}/campaigns/{campaign_id}/`**
+
+Removes the association between a campaign and an organisation. Does not delete the campaign itself.
+
+**Authentication:** Required (org manager)
+
+**Path Parameters**
+
+<ParamField path="organisation_id" type="integer" required>
+  ID of the organisation.
+</ParamField>
+
+<ParamField path="campaign_id" type="integer" required>
+  ID of the campaign to unlink.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": "Organisation and campaign unassociated successfully" }
+```
+
+---
+
+## Data Models
+
+**`OrganisationType`** — `FREE` | `DISCOUNTED` | `FULL_FEE`
+
+<ResponseField name="organisationId" type="integer">
+  Unique numeric identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name (unique, max 512 characters).
+</ResponseField>
+
+<ResponseField name="slug" type="string">
+  URL-safe identifier derived from the name.
+</ResponseField>
+
+<ResponseField name="logo" type="string">
+  URL pointing to the organisation logo.
+</ResponseField>
+
+<ResponseField name="url" type="string">
+  Organisation website.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Subscription type: `FREE`, `DISCOUNTED`, or `FULL_FEE`.
+</ResponseField>
+
+<ResponseField name="managers" type="array">
+  List of manager objects, each containing `username` and `pictureUrl`.
+</ResponseField>

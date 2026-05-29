@@ -1,0 +1,211 @@
+---
+title: "Configure Tasking Manager Environment Variables"
+sidebarTitle: "Configuration"
+description: "Complete reference for all HOT Tasking Manager environment variables: application URLs, database, OAuth2, email, editors, mapping limits, and integrations."
+---
+
+Tasking Manager is configured entirely through environment variables. In a Docker Compose deployment these are loaded from a file named `tasking-manager.env` in the repository root; the backend reads this file via `python-dotenv` at startup. Start by copying the included template:
+
+```bash
+cp example.env tasking-manager.env
+```
+
+Then edit `tasking-manager.env` with the values appropriate for your instance. Variables without a default listed below are unset unless explicitly provided.
+
+<Warning>
+  `TM_DEFAULT_CHANGESET_COMMENT` must be unique to your instance. Using the same hashtag as another Tasking Manager deployment will mix changeset data across instances, corrupting project statistics. Always set a value specific to your organisation (e.g. `#myorg-tm-project`).
+</Warning>
+
+---
+
+## Application URLs
+
+These variables define the public-facing addresses of the frontend and backend. Both the backend (for email links and OAuth callbacks) and the frontend (for API calls) read these values.
+
+<Note>
+  Use `127.0.0.1` rather than `localhost` in development. OSM OAuth requires an exact URI match and `localhost` is not always treated as equivalent.
+</Note>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_APP_BASE_URL` | `http://127.0.0.1:3000` | Full public URL of the frontend. Used by the backend to build links in emails and OAuth callbacks. Set to your production domain in live deployments (e.g. `https://tasks.hotosm.org`). |
+| `TM_APP_API_URL` | `http://127.0.0.1:3000/api` | Full URL of the backend API. Used by both the backend itself and the frontend to locate the API. |
+| `TM_APP_API_VERSION` | `v2` | API version string appended after `/api/` in all API routes. |
+
+---
+
+## Organisation Branding
+
+These values customise the name, logo, and social links displayed throughout the interface.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_ORG_NAME` | `Humanitarian OpenStreetMap Team` | Full name of the organisation hosting the instance. |
+| `TM_ORG_CODE` | `HOT` | Short three-letter code for the organisation. Used in automated tests and some UI labels. |
+| `TM_ORG_LOGO` | `https://cdn.img.url/logo.png` | URL of the organisation logo image. |
+| `TM_ORG_URL` | `https://example.com` | Homepage URL of the hosting organisation. |
+| `TM_ORG_PRIVACY_POLICY_URL` | `https://www.hotosm.org/privacy` | URL of the organisation's privacy policy page. |
+| `TM_ORG_TWITTER` | `http://twitter.com/hotosm` | Twitter/X profile URL. |
+| `TM_ORG_FB` | `https://www.facebook.com/hotosm` | Facebook page URL. |
+| `TM_ORG_INSTAGRAM` | `https://www.instagram.com/open.mapping.hubs/` | Instagram profile URL. |
+| `TM_ORG_YOUTUBE` | `https://www.youtube.com/user/hotosm` | YouTube channel URL. |
+| `TM_ORG_GITHUB` | `https://github.com/hotosm` | GitHub organisation URL. |
+
+---
+
+## OSM Server
+
+Configure which OpenStreetMap server the instance connects to. Change these only if you are running a private OSM instance.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OSM_SERVER_URL` | `https://www.openstreetmap.org` | Base URL of the OSM web server. |
+| `OSM_SERVER_API_URL` | `https://api.openstreetmap.org` | Base URL of the OSM API. |
+| `OSM_NOMINATIM_SERVER_URL` | `https://nominatim.openstreetmap.org` | Nominatim geocoding server URL used for AOI searches. |
+| `OSM_REGISTER_URL` | `https://www.openstreetmap.org/user/new` | URL for new user registration, shown to unauthenticated visitors. |
+| `OSM_USER_AGENT` | `HOT-TaskingManager` | User-Agent string sent with requests to OSM APIs. |
+
+---
+
+## OSM OAuth2
+
+<Note>
+  `TM_CLIENT_ID`, `TM_CLIENT_SECRET`, `TM_REDIRECT_URI`, and `TM_SECRET` are **required**. The application will not start without valid OAuth2 credentials.
+</Note>
+
+Register an OAuth2 application at `https://www.openstreetmap.org/oauth2/applications` to obtain the client ID and secret.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_CLIENT_ID` | — | OAuth2 client ID issued by OSM when you register the application. **Required.** |
+| `TM_CLIENT_SECRET` | — | OAuth2 client secret issued by OSM. **Required.** |
+| `TM_REDIRECT_URI` | `http://127.0.0.1:3000/authorized` | Redirect URI registered with the OSM OAuth2 application. Must exactly match the value set in the OSM application settings. **Required.** |
+| `TM_SCOPE` | `read_prefs write_api` | Space-separated OAuth2 scopes requested from OSM. |
+| `TM_SECRET` | `s0m3l0ngr4nd0mstr1ng-b3cr34tiv3` | A random secret string shared between the frontend and backend for internal authentication. **Required.** Generate a long random value for production. |
+
+---
+
+## Database
+
+The backend uses `asyncpg` to connect to PostgreSQL with the PostGIS extension. Individual variables are assembled into a `postgresql+asyncpg://` URI at startup, unless `DB_CONNECT_PARAM_JSON` is provided.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_DB` | `tasking-manager` | Name of the main PostgreSQL database. |
+| `POSTGRES_USER` | `tm` | PostgreSQL username. |
+| `POSTGRES_PASSWORD` | `tm` | PostgreSQL password. **Use a strong password in production.** |
+| `POSTGRES_ENDPOINT` | `tm-db` | Hostname or IP of the PostgreSQL server. Defaults to the Docker Compose service name `tm-db`. Set to a remote host when using an external database. |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port. |
+| `DB_MIN_CONNECTIONS` | `4` | Minimum number of connections in the asyncpg connection pool. |
+| `DB_MAX_CONNECTIONS` | `8` | Maximum number of connections in the asyncpg connection pool. |
+| `POSTGRES_TEST_DB` | `taskingmanagertest` | Database name used when running the test suite. All other connection parameters are inherited from the main database settings. |
+| `DB_CONNECT_PARAM_JSON` | — | JSON string containing full connection parameters. When set, overrides all individual `POSTGRES_*` variables. Keys: `username`, `password`, `host`, `port`, `dbname`. Example: `'{"username":"tm","password":"secret","host":"db.example.org","port":"5432","dbname":"taskingmanager"}'` |
+
+---
+
+## Email (SMTP)
+
+Email is optional but required for automated notifications such as project update messages. Configure an SMTP server or AWS SES credentials here.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_EMAIL_FROM_ADDRESS` | `noreply@localhost` | Sender address on all outgoing automated emails. |
+| `TM_EMAIL_CONTACT_ADDRESS` | `sysadmin@localhost` | Recipient address for messages submitted via the contact form. |
+| `TM_SMTP_HOST` | `smtp.gmail.com` | Hostname of the SMTP server. |
+| `TM_SMTP_PORT` | `587` | SMTP server port. |
+| `TM_SMTP_USER` | — | SMTP authentication username. |
+| `TM_SMTP_PASSWORD` | — | SMTP authentication password. |
+| `TM_SMTP_USE_TLS` | `0` | Set to `1` to enable STARTTLS. |
+| `TM_SMTP_USE_SSL` | `1` | Set to `1` to enable implicit SSL (port 465). |
+| `TM_SEND_PROJECT_EMAIL_UPDATES` | `1` | Set to `0` to disable project update notification emails. Recommended for testing or staging instances. |
+
+---
+
+## Editors & Maps
+
+These control the URLs for external editors and the Mapbox token for map tiles.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ID_EDITOR_URL` | `https://www.openstreetmap.org/edit?editor=id&` | URL for the iD editor. Change only when directing users to a private OSM instance. |
+| `POTLATCH2_EDITOR_URL` | `https://www.openstreetmap.org/edit?editor=potlatch2` | URL for the Potlatch 2 editor. |
+| `RAPID_EDITOR_URL` | `https://mapwith.ai/rapid` | URL for the Meta Rapid editor. |
+| `TM_MAPBOX_TOKEN` | — | Mapbox access token for vector tile basemaps. If unset, the application falls back to the raster-tile Humanitarian Layer. Costs apply above 50,000 map loads per month on a paid Mapbox plan. |
+
+---
+
+## Mapping Limits
+
+These values control task locking behaviour and project creation constraints.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_TASK_AUTOUNLOCK_AFTER` | `2h` | Duration after which a locked task is automatically released. Accepts values like `30m`, `2h`, `7d`, or combined `1h30m`. |
+| `TM_MAPPER_LEVEL_INTERMEDIATE` | `250` | Number of OSM changesets required to reach intermediate mapper level. |
+| `TM_MAPPER_LEVEL_ADVANCED` | `500` | Number of OSM changesets required to reach advanced mapper level. |
+| `TM_IMPORT_MAX_FILESIZE` | `1000000` | Maximum allowed file size in bytes when importing a project geometry from a file. Default is ~1 MB. |
+| `TM_MAX_AOI_AREA` | `5000` | Maximum allowed project Area of Interest in square kilometres. |
+
+---
+
+## Integrations
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OHSOME_STATS_BASE_URL` | `https://stats.now.ohsome.org` | Base URL for ohsomeNow Stats used on project statistics pages. |
+| `OHSOME_STATS_API_URL` | `https://stats.now.ohsome.org/api` | API URL for ohsomeNow Stats. |
+| `OHSOME_STATS_TOPICS` | `road,waterway,building,poi` | Comma-separated list of OSM feature topics tracked by ohsomeNow Stats. |
+| `OHSOME_STATS_TOKEN` | `testSuperSecretTestToken` | Authentication token for the ohsomeNow Stats API. |
+| `MAPSWIPE_API_URL` | `https://backend.mapswipe.org/graphql/` | MapSwipe GraphQL API URL for integrating MapSwipe campaign data. |
+| `EXPORT_TOOL_S3_URL` | — | S3 base URL for the HOT Export Tool integration. |
+| `ENABLE_EXPORT_TOOL` | `0` | Set to `1` to enable the Export Tool integration. |
+| `TM_IMAGE_UPLOAD_API_URL` | — | URL of an image upload service for storing organisation logos and comment images. |
+| `TM_IMAGE_UPLOAD_API_KEY` | — | Authentication key for the image upload API. |
+
+---
+
+## Monitoring & Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_SENTRY_BACKEND_DSN` | — | Sentry DSN for backend error tracking (e.g. `https://foo.ingest.sentry.io/1234567`). |
+| `TM_SENTRY_FRONTEND_DSN` | — | Sentry DSN for frontend error tracking. |
+| `TM_LOG_LEVEL` | `DEBUG` | Logging verbosity level. Accepted values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Use `ERROR` on live sites. |
+| `TM_LOG_DIR` | `/home/appuser/logs` | Directory path where log files are written on the server. |
+| `TM_MATOMO_ID` | — | Matomo site ID for web analytics. |
+| `TM_MATOMO_ENDPOINT` | — | Matomo tracker endpoint URL. |
+
+---
+
+## Languages
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_DEFAULT_LOCALE` | `en` | Default language locale code shown to unauthenticated visitors. |
+| `TM_SUPPORTED_LANGUAGES_CODES` | `ar, cs, de, el, en, es, fa_IR, fr, he, hu, id, it, ja, ko, mg, ml, nl_NL, pt, pt_BR, ru, sv, sw, tl, tr, uk, zh_TW` | Comma-separated list of locale codes to enable. Must have the same number of entries as `TM_SUPPORTED_LANGUAGES`. |
+| `TM_SUPPORTED_LANGUAGES` | `عربى, Čeština, Deutsch, Ελληνικά, English, Español, فارسی, Français, עברית, Magyar, Indonesia, Italiano, 日本語, 한국어, Malagasy, Malayalam, Nederlands, Português, Português (Brasil), Русский язык, Svenska, Kiswahili, Filipino (Tagalog), Türkçe, Українська, 繁體中文` | Comma-separated list of human-readable language names corresponding 1:1 with `TM_SUPPORTED_LANGUAGES_CODES`. |
+
+---
+
+## Sandbox
+
+The sandbox mode lets users experiment without affecting production data. Set `TM_ENABLE_SANDBOX` to `true` only when a sandbox database and dashboard are already configured.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_ENABLE_SANDBOX` | `false` | Set to `true` to enable the sandbox environment toggle in the UI. |
+| `TM_SANDBOX_DB` | `sandbox_db` | Name of the sandbox PostgreSQL database. |
+| `TM_SANDBOX_DASHBOARD_API_URL` | `https://sandboxurl.org` | API URL of the sandbox statistics dashboard. |
+
+---
+
+## Other
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TM_ENABLE_SERVICEWORKER` | `0` | Set to `1` to register a service worker for offline support and faster loads. Note: more complex to configure when the frontend and backend share the same origin. |
+| `TM_HOMEPAGE_IMG_HIGH` | — | URL of a high-resolution (2500px wide) image for the homepage banner. Falls back to the bundled default if unset. |
+| `TM_HOMEPAGE_IMG_LOW` | — | URL of a low-resolution (824px wide) version of the homepage banner image. |
+| `TM_HOMEPAGE_VIDEO_URL` | — | URL of an MP4 video to play as the homepage banner background. When unset, a static image is used instead. |
+| `DEFAULT_VALIDATOR_TEAM_ID` | — | Team ID to automatically populate as the default validator team on new projects. HOT uses this for the HOT Global Validators team. |
+| `TM_SERVICE_DESK` | — | URL to the organisation's service desk, shown in the Contact page and fallback error component. |
