@@ -92,17 +92,17 @@ This guide walks you through spinning up a complete HOT Tasking Manager stack â€
     The FastAPI backend serves a Swagger UI at:
 
     ```text
-    http://127.0.0.1:5000/api/docs
+    http://127.0.0.1:3000/api/docs
     ```
 
-    Every endpoint is documented with request/response schemas and can be exercised directly from the browser. The raw OpenAPI JSON schema is available at `http://127.0.0.1:5000/api/openapi.json`.
+    Every endpoint is documented with request/response schemas and can be exercised directly from the browser. The raw OpenAPI JSON schema is available at `http://127.0.0.1:3000/api/openapi.json`.
   </Step>
 
   <Step title="Make Your First API Call">
     The system statistics endpoint requires no authentication and returns aggregate project and mapping statistics â€” a useful smoke-test to confirm the stack is healthy end-to-end:
 
     ```bash
-    curl http://127.0.0.1:5000/api/v2/system/statistics/
+    curl http://127.0.0.1:3000/api/v2/system/statistics/
     ```
 
     A successful response looks like:
@@ -122,7 +122,7 @@ This guide walks you through spinning up a complete HOT Tasking Manager stack â€
     You can also hit the heartbeat endpoint to verify the backend process itself is alive:
 
     ```bash
-    curl http://127.0.0.1:5000/api/v2/system/heartbeat/
+    curl http://127.0.0.1:3000/api/v2/system/heartbeat/
     ```
 
     ```json
@@ -147,7 +147,7 @@ This guide walks you through spinning up a complete HOT Tasking Manager stack â€
     Pass the token in subsequent `curl` requests using the `Token` scheme:
 
     ```bash
-    curl http://127.0.0.1:5000/api/v2/projects/ \
+    curl http://127.0.0.1:3000/api/v2/projects/ \
       -H "Authorization: Token <your-api-key>"
     ```
 

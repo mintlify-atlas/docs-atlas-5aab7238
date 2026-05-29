@@ -123,7 +123,6 @@ Creates a new organisation. Only users with the `ADMIN` role can create organisa
 | Status | Meaning |
 |--------|---------|
 | `400`  | Invalid request payload |
-| `402`  | Organisation name already exists |
 | `403`  | User is not an admin |
 
 <Warning>
@@ -320,11 +319,11 @@ Permanently deletes an organisation. The organisation must have no associated pr
 | Status | Meaning |
 |--------|---------|
 | `401`  | Missing or invalid token |
-| `403`  | User is not an org admin or the organisation still has projects/teams |
+| `403`  | User is not an org admin or the organisation still has projects |
 | `404`  | Organisation not found |
 
 <Note>
-  An organisation cannot be deleted while it still owns projects or teams. Remove all projects and teams first, or archive projects before attempting deletion.
+  An organisation cannot be deleted while it still owns projects. Remove or archive all projects before attempting deletion.
 </Note>
 
 ---
@@ -341,7 +340,7 @@ Campaigns can be linked to organisations to group thematically related mapping e
 
 Returns all campaigns associated with the given organisation.
 
-**Authentication:** Optional
+**Authentication:** Not required
 
 **Path Parameters**
 

@@ -140,6 +140,18 @@ curl "https://tasking-manager-api.hotosm.org/api/v2/projects/?mappingTypes=BUILD
   When `true`, streams results as a CSV file instead of JSON. Cannot be combined with `omitMapResults=true`.
 </ParamField>
 
+<ParamField query="partnerId" type="integer">
+  Filter by partner ID. Admin-only — requires authentication.
+</ParamField>
+
+<ParamField query="partnershipFrom" type="string">
+  ISO 8601 date. Filter projects whose partnership started on or after this date. Requires `partnerId`.
+</ParamField>
+
+<ParamField query="partnershipTo" type="string">
+  ISO 8601 date. Filter projects whose partnership ended on or before this date. Requires `partnerId`.
+</ParamField>
+
 #### Responses
 
 | Status | Description |
@@ -419,6 +431,153 @@ curl -X DELETE "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/" \
 
 ---
 
+## Project Queries
+
+### Get Project Summary
+
+**GET** `/api/v2/projects/{project_id}/queries/summary/`
+
+Returns a lightweight summary of a project. Private or draft projects enforce authentication and permission checks.
+
+<CodeGroup>
+```bash Get project summary
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/queries/summary/" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project summary returned. |
+| `403` | User not permitted to view private or draft project. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Featured Projects
+
+**GET** `/api/v2/projects/queries/featured/`
+
+Returns projects that have been marked as featured. No authentication required.
+
+<CodeGroup>
+```bash Get featured projects
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/queries/featured/" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Featured projects returned. |
+| `500` | Internal server error. |
+
+---
+
+### Get Projects by Bounding Box
+
+**GET** `/api/v2/projects/queries/bbox/`
+
+Returns projects whose area of interest intersects with the supplied bounding box. Requires a valid token and the user must manage at least one organisation.
+
+<CodeGroup>
+```bash Search by bounding box
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/queries/bbox/?bbox=34.404,-1.034,34.717,-0.624&srid=4326" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Query Parameters
+
+<ParamField query="bbox" type="string" required>
+  Comma-separated bounding box coordinates: `xmin,ymin,xmax,ymax`.
+</ParamField>
+
+<ParamField query="srid" type="integer" default="4326">
+  Spatial reference ID of the bbox coordinates.
+</ParamField>
+
+<ParamField query="createdByMe" type="boolean" default="false">
+  Limit to projects created by the authenticated user.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Projects GeoJSON returned. |
+| `400` | Invalid bounding box or bounding box too large. |
+| `403` | User does not manage any organisation. |
+| `500` | Internal server error. |
+
+---
+
+### Get Own Projects (Admin)
+
+**GET** `/api/v2/projects/queries/myself/owner/`
+
+Returns all projects managed by the authenticated user. The caller must manage at least one organisation.
+
+<CodeGroup>
+```bash Get my projects
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/queries/myself/owner/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Projects returned. |
+| `401` | Missing or invalid token. |
+| `403` | User does not manage any organisation. |
+| `404` | No projects found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Projects Touched by User
+
+**GET** `/api/v2/projects/queries/{username}/touched/`
+
+Returns projects that the specified user has mapped or validated.
+
+<CodeGroup>
+```bash Get projects mapped by user
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/queries/Thinkwhere/touched/" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="username" type="string" required>
+  OSM username of the user.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Mapped projects returned. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
 ## Project Actions
 
 ### Transfer Project Ownership
@@ -505,6 +664,107 @@ curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/action
 
 ---
 
+### Set Project as Featured
+
+**POST** `/api/v2/projects/{project_id}/actions/feature/`
+
+Marks a project as featured so it appears in the featured projects list. The caller must be a project manager or admin.
+
+<CodeGroup>
+```bash Feature a project
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/actions/feature/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project set as featured. Body: `{"Success": true}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Remove Project from Featured
+
+**POST** `/api/v2/projects/{project_id}/actions/remove-feature/`
+
+Removes a project from the featured list. The caller must be a project manager or admin.
+
+<CodeGroup>
+```bash Un-feature a project
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/actions/remove-feature/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Project removed from featured. Body: `{"Success": true}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Set Project Interests
+
+**POST** `/api/v2/projects/{project_id}/actions/set-interests/`
+
+Creates or replaces the interest associations for a project. The caller must be a project manager or admin.
+
+<CodeGroup>
+```bash Set project interests
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/actions/set-interests/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"interests": [1, 3, 7]}'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="interests" type="array" required>
+  Array of integer interest IDs to associate with the project.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Interests updated. |
+| `400` | Invalid request. |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
 ## Project Statistics
 
 ### Get Project Statistics
@@ -565,6 +825,38 @@ curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/statistics/"
 |--------|-------------|
 | `200` | Statistics returned. |
 | `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Project User Statistics
+
+**GET** `/api/v2/projects/{project_id}/statistics/queries/{username}/`
+
+Returns detailed statistics about a specific user's contributions to the project.
+
+<CodeGroup>
+```bash Get user stats on project
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/statistics/queries/Thinkwhere/"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+<ParamField path="username" type="string" required>
+  OSM username to get statistics for.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User project statistics returned. |
+| `404` | User or project not found. |
 | `500` | Internal server error. |
 
 ---

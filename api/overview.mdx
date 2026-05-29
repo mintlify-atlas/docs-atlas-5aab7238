@@ -1,7 +1,7 @@
 ---
-title: "Tasking Manager REST API Overview"
+title: "HOT Tasking Manager REST API — Complete Overview"
 sidebarTitle: "Overview"
-description: "HOT Tasking Manager exposes a versioned REST API at /api/v2/. Explore endpoints for projects, tasks, users, teams, organisations, campaigns, and more."
+description: "HOT Tasking Manager exposes a versioned REST API at /api/v2/. Explore endpoints for projects, tasks, users, teams, organisations, campaigns, and more. Authenticate with OSM OAuth 2.0."
 ---
 
 The HOT Tasking Manager provides a fully versioned REST API that powers both the official web frontend and any third-party integrations. All resources are served as JSON under the `/api/v2/` prefix. Whether you are automating project creation, querying task statistics, or building a custom mapping dashboard, every capability available in the browser UI is reachable through the API.
@@ -11,7 +11,7 @@ The HOT Tasking Manager provides a fully versioned REST API that powers both the
 The API base URL is determined by the `TM_APP_API_URL` environment variable. In a local development environment the default is:
 
 ```
-http://127.0.0.1:5000/api/v2/
+http://127.0.0.1:3000/api/v2/
 ```
 
 For the HOT production instance the base URL is:
@@ -32,15 +32,15 @@ All endpoints are prefixed with `/api/v2/`. There is currently one stable versio
 
 All request and response bodies use `application/json`. Set the `Content-Type` header accordingly when sending a body:
 
-```bash
+```http
 Content-Type: application/json
 ```
 
 ## Authentication
 
-Protected endpoints require a Bearer token in the `Authorization` header:
+Protected endpoints require a `Token` scheme in the `Authorization` header:
 
-```
+```http
 Authorization: Token <your-session-token>
 ```
 
@@ -114,7 +114,7 @@ EXTRA_CORS_ORIGINS=https://myapp.example.com,https://dashboard.example.com
 
 The API supports multiple languages. Send an `Accept-Language` header to receive localized strings (such as project names and instructions) in the preferred locale:
 
-```bash
+```http
 Accept-Language: fr
 ```
 
@@ -126,7 +126,7 @@ A few system endpoints are useful for monitoring and diagnostics:
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/v2/system/heartbeat/` | Health check — returns service status and latest release version. |
+| `GET /api/v2/system/heartbeat/` | Health check — returns `{"status": "Fastapi healthy", "release": {...}}`. |
 | `GET /api/v2/system/languages/` | Returns all supported language codes and display names. |
 | `GET /api/v2/system/statistics/` | Returns aggregate platform statistics. |
 | `GET /api/v2/system/banner/` | Returns the currently active system-wide banner message. |

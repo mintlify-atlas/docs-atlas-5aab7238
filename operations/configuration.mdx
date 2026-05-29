@@ -170,8 +170,10 @@ These values control task locking behaviour and project creation constraints.
 |----------|---------|-------------|
 | `TM_SENTRY_BACKEND_DSN` | — | Sentry DSN for backend error tracking (e.g. `https://foo.ingest.sentry.io/1234567`). |
 | `TM_SENTRY_FRONTEND_DSN` | — | Sentry DSN for frontend error tracking. |
+| `USE_SENTRY` | `false` | Set to `true` to enable Sentry error reporting. Requires `TM_SENTRY_BACKEND_DSN` to be configured. |
 | `TM_LOG_LEVEL` | `DEBUG` | Logging verbosity level. Accepted values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Use `ERROR` on live sites. |
 | `TM_LOG_DIR` | `/home/appuser/logs` | Directory path where log files are written on the server. |
+| `PROFILING` | `False` | Set to `True` to enable request profiling middleware. Intended for development and performance analysis only; do not enable in production. |
 | `TM_MATOMO_ID` | — | Matomo site ID for web analytics. |
 | `TM_MATOMO_ENDPOINT` | — | Matomo tracker endpoint URL. |
 

@@ -38,7 +38,7 @@ Each project stores separate lists of permitted editors for mapping (`mapping_ed
 
 Every edit made through Tasking Manager should carry an OSM changeset comment that includes the project hashtag. Tasking Manager automatically prepends the system-wide default prefix (configured via `TM_DEFAULT_CHANGESET_COMMENT`, default: `#hot-tm-stage-project`) followed by the project ID:
 
-```
+```text
 #hot-tm-stage-project-42 <any additional comment set by the project manager>
 ```
 
@@ -130,8 +130,7 @@ A user cannot validate their own mapped tasks. The system enforces this rule in 
 
     ```json
     {
-      "taskIds": [14, 15, 16],
-      "comment": ""
+      "taskIds": [14, 15, 16]
     }
     ```
 
@@ -181,7 +180,17 @@ A user cannot validate their own mapped tasks. The system enforces this rule in 
     POST /projects/{project_id}/tasks/actions/stop-validation/
     ```
 
-    This returns the tasks to `MAPPED` status.
+    with a body listing the tasks to reset:
+
+    ```json
+    {
+      "resetTasks": [
+        { "taskId": 14, "comment": "Stopping — will return later." }
+      ]
+    }
+    ```
+
+    This returns each task to its previous status (the state it was in before it was locked for validation — typically `MAPPED`, `BADIMAGERY`, or `INVALIDATED`).
   </Step>
 </Steps>
 

@@ -548,9 +548,9 @@ Assigns a team to a project with a specified role. The requesting user must be b
 
 <br />
 
-**`PATCH /api/v2/teams/{team_id}/projects/{project_id}/`**
+**`PATCH /api/v2/projects/{team_id}/projects/{project_id}/`**
 
-Changes the role of an already-assigned team on a project.
+Changes the role of an already-assigned team on a project. The requesting user must be a project manager.
 
 **Authentication:** Required (project manager)
 
@@ -578,11 +578,39 @@ Changes the role of an already-assigned team on a project.
 
 ---
 
-### Remove a Team from a Project
+### Remove a Team from a Project (via project manager)
 
 <br />
 
-**`DELETE /api/v2/projects/{project_id}/teams/{team_id}/`**
+**`DELETE /api/v2/projects/{team_id}/projects/{project_id}/`**
+
+Removes a team from a specific project. The caller must be a project manager.
+
+**Authentication:** Required (project manager)
+
+**Path Parameters**
+
+<ParamField path="team_id" type="integer" required>
+  ID of the team to remove.
+</ParamField>
+
+<ParamField path="project_id" type="integer" required>
+  ID of the project.
+</ParamField>
+
+**Response** `200 OK`
+
+```json
+{ "Success": true }
+```
+
+---
+
+### Remove a Team from a Project (via team manager)
+
+<br />
+
+**`DELETE /api/v2/teams/projects/{project_id}/teams/{team_id}/`**
 
 Unlinks a team from a specific project. The caller must be a team manager.
 

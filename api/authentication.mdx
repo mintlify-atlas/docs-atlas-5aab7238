@@ -1,7 +1,7 @@
 ---
-title: "Authenticate with the Tasking Manager API"
+title: "OSM OAuth 2.0 Authentication for the Tasking Manager API"
 sidebarTitle: "Authentication"
-description: "Tasking Manager uses OSM OAuth2 for user authentication. Obtain a Bearer token to access protected API endpoints."
+description: "Tasking Manager delegates authentication to OpenStreetMap OAuth 2.0. Learn how to complete the login flow, obtain a signed session token, and call protected API endpoints securely."
 ---
 
 The Tasking Manager delegates authentication entirely to OpenStreetMap's OAuth 2.0 service. When a user grants permission, the Tasking Manager backend exchanges the authorization code for an OSM access token, looks up (or creates) the user record in its database, and issues a signed session token. That session token is what you include in every subsequent API request. All write operations — creating projects, locking tasks, managing teams — and most user-specific reads require a valid token.
@@ -67,7 +67,7 @@ The Tasking Manager delegates authentication entirely to OpenStreetMap's OAuth 2
     ```
 
     <ParamField query="code" type="string" required>
-      The short-lived authorization code issued by OSM after the user grants permission.
+      The short-lived authorization code issued by OSM after the user grants permission. Internally aliased from the `authorization_code` variable.
     </ParamField>
 
     <ParamField query="redirect_uri" type="string" required>
@@ -85,7 +85,7 @@ The Tasking Manager delegates authentication entirely to OpenStreetMap's OAuth 2
       "username": "your_osm_username",
       "session_token": "eyJ...<signed-session-token>",
       "picture": "https://www.gravatar.com/avatar/...",
-      "session": { ... }
+      "session": {}
     }
     ```
 
@@ -105,11 +105,11 @@ The Tasking Manager delegates authentication entirely to OpenStreetMap's OAuth 2
   <Step title="Use the token in API requests">
     Include the session token in the `Authorization` header of every request to a protected endpoint. The scheme is `Token` (not `Bearer`):
 
-    ```
+    ```http
     Authorization: Token <your-session-token>
     ```
 
-    The token is a base64-encoded, signed string. The `TokenAuthBackend` middleware validates it on every request — it decodes the base64 payload, verifies the signature using the `TM_SECRET` key, and checks that the token has not expired (tokens are valid for 7 days / 604 800 seconds in production).
+    The token is a base64-encoded, signed string. The `TokenAuthBackend` middleware validates it on every request — it decodes the base64 payload, verifies the signature using the `TM_SECRET` key, and checks that the token has not expired (tokens are valid for 7 days / 604 800 seconds).
 
     <CodeGroup>
       ```bash curl

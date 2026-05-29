@@ -244,6 +244,29 @@ curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/filter/ali/?pr
 
 ---
 
+### Get Favorited Projects for Authenticated User
+
+**GET** `/api/v2/users/queries/favorites/`
+
+Returns the list of projects favorited by the authenticated user. Requires a valid token.
+
+<CodeGroup>
+```bash Get my favorited projects
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/favorites/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Favorited projects returned. |
+| `404` | User not found. |
+| `500` | Internal server error. |
+
+---
+
 ### Update Own Profile
 
 **PATCH** `/api/v2/users/me/actions/set-user/`
@@ -261,8 +284,7 @@ curl -X PATCH "https://tasking-manager-api.hotosm.org/api/v2/users/me/actions/se
     "city": "Nairobi",
     "country": "Kenya",
     "emailAddress": "alice@example.com",
-    "twitterId": "alicemaps",
-    "defaultEditor": "ID"
+    "twitterId": "alicemaps"
   }'
 ```
 </CodeGroup>
@@ -302,7 +324,7 @@ curl -X PATCH "https://tasking-manager-api.hotosm.org/api/v2/users/me/actions/se
 </ParamField>
 
 <ParamField body="gender" type="string">
-  Gender identity. Valid values: `MALE`, `FEMALE`, `SELF_DESCRIBE`, `PREFER_NOT`.
+  Gender identity.
 </ParamField>
 
 <ParamField body="selfDescriptionGender" type="string">
@@ -449,6 +471,31 @@ curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/tasks/locked/"
 | Status | Description |
 |--------|-------------|
 | `200` | Locked tasks returned. |
+| `401` | Missing or invalid token. |
+| `404` | User currently has no locked tasks. |
+| `500` | Internal server error. |
+
+---
+
+### Get Details of Tasks Locked by Authenticated User
+
+**GET** `/api/v2/users/queries/tasks/locked/details/`
+
+Returns full task details for all tasks the authenticated user currently has locked, including localized task information. Requires a valid token.
+
+<CodeGroup>
+```bash Get locked task details
+curl "https://tasking-manager-api.hotosm.org/api/v2/users/queries/tasks/locked/details/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Locked task details returned. |
 | `401` | Missing or invalid token. |
 | `404` | User currently has no locked tasks. |
 | `500` | Internal server error. |
@@ -698,9 +745,99 @@ curl -X PATCH \
 
 ---
 
+### Set Expert Mode
+
+**PATCH** `/api/v2/users/{user_name}/actions/set-expert-mode/{is_expert}/`
+
+Enables or disables expert mode for a user. Restricted to **Admin** users only.
+
+<CodeGroup>
+```bash Enable expert mode
+curl -X PATCH \
+  "https://tasking-manager-api.hotosm.org/api/v2/users/Thinkwhere/actions/set-expert-mode/true/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="user_name" type="string" required>
+  The OSM username of the user.
+</ParamField>
+
+<ParamField path="is_expert" type="string" required>
+  Set to `true` to enable expert mode, `false` to disable.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Expert mode updated. Body: `{"Success": "Expert mode updated"}` |
+| `400` | Invalid value. |
+| `401` | Missing or invalid token or caller is not an admin. |
+| `500` | Internal server error. |
+
+---
+
+### Resend Email Verification
+
+**PATCH** `/api/v2/users/me/actions/verify-email/`
+
+Resends the email verification message to the authenticated user's registered email address. Requires a valid token.
+
+<CodeGroup>
+```bash Resend verification email
+curl -X PATCH "https://tasking-manager-api.hotosm.org/api/v2/users/me/actions/verify-email/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Verification email sent. Body: `{"Success": "Verification email resent"}` |
+| `400` | Invalid email state. |
+| `500` | Internal server error. |
+
+---
+
+### Set User Interests
+
+**POST** `/api/v2/users/me/actions/set-interests/`
+
+Creates or replaces the interest associations for the authenticated user. Requires a valid token.
+
+<CodeGroup>
+```bash Set user interests
+curl -X POST "https://tasking-manager-api.hotosm.org/api/v2/users/me/actions/set-interests/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"interests": [1, 3, 7]}'
+```
+</CodeGroup>
+
+#### Request Body
+
+<ParamField body="interests" type="array" required>
+  Array of integer interest IDs to associate with the user.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | User interests updated. |
+| `400` | Invalid request. |
+| `401` | Missing or invalid token. |
+| `500` | Internal server error. |
+
+---
+
 ### Get Own Profile Example
 
-The following shows how to retrieve the authenticated user's own profile by first fetching the `/queries/myself/` convenience endpoint (via the user's session token) and then looking up full details by the returned user ID.
+The following shows how to retrieve the authenticated user's own profile by looking up full details by user ID.
 
 <CodeGroup>
 ```bash Get own user profile (by known ID)

@@ -109,10 +109,11 @@ The creator of a team is automatically assigned the `MANAGER` function.
 
 ### Team Roles on Projects
 
-When a team is assigned to a project, it is given one of three roles via the `project_teams` join table. The `TeamRoles` enum defines these:
+When a team is assigned to a project, it is given one of the roles defined by the `TeamRoles` enum, stored in the `project_teams` join table:
 
 | Role | Value | What it grants |
 |---|---|---|
+| `READ_ONLY` | `-1` | Team members have no mapping or validation rights on the project |
 | `MAPPER` | `0` | Team members can lock tasks for mapping on the project |
 | `VALIDATOR` | `1` | Team members can lock tasks for validation on the project |
 | `PROJECT_MANAGER` | `2` | Team members can manage the project (edit settings, publish, etc.) |

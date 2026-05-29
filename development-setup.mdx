@@ -101,7 +101,7 @@ POSTGRES_PORT=5432
         The backend API docs are served at:
 
         ```text
-        http://127.0.0.1:5000/api/docs
+        http://127.0.0.1:3000/api/docs
         ```
       </Step>
 
@@ -179,7 +179,7 @@ POSTGRES_PORT=5432
 
     #### Dependencies
 
-    - [Node.js LTS v12+](https://nodejs.org/en/) — check with `node --version`
+    - [Node.js LTS v18+](https://nodejs.org/en/) — check with `node --version` (v18.19.1 or later recommended)
     - [Yarn](https://classic.yarnpkg.com/en/docs/install) — check with `yarn --version`
 
     Install frontend dependencies:
@@ -288,7 +288,7 @@ POSTGRES_PORT=5432
 
 ## API Access
 
-When the backend is running (either via Docker or standalone), the full API is accessible at `http://localhost:5000` (standalone) or proxied through Traefik at `http://127.0.0.1:5000` (Docker). The Swagger UI at `/api/docs` documents every endpoint, shows request/response schemas, and supports authenticated test calls.
+When the backend is running, the full API is accessible at `http://localhost:5000` (standalone) or proxied through Traefik at `http://127.0.0.1:3000/api/` (Docker). The Swagger UI at `/api/docs` documents every endpoint, shows request/response schemas, and supports authenticated test calls.
 
 To authenticate in Swagger UI:
 
@@ -296,10 +296,10 @@ To authenticate in Swagger UI:
 2. Open your profile settings, enable **Expert Mode**, and copy the **API Key**.
 3. In the Swagger UI, click **Authorize** and enter `Token <your-api-key>`.
 
-Authenticated `curl` requests use the same format:
+Authenticated `curl` requests use the same format (adjust the host and port for your setup — port `3000` via Docker, port `5000` standalone):
 
 ```bash
-curl http://localhost:5000/api/v2/projects/ \
+curl http://127.0.0.1:3000/api/v2/projects/ \
   -H "Authorization: Token <your-api-key>"
 ```
 

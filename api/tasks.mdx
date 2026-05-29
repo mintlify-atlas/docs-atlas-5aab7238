@@ -116,6 +116,113 @@ curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/7/" \
 
 ---
 
+### Get Mapped Tasks by User
+
+**GET** `/api/v2/projects/{project_id}/tasks/queries/mapped/`
+
+Returns all mapped tasks for a project grouped by the username of the mapper.
+
+<CodeGroup>
+```bash Get mapped tasks grouped by user
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/queries/mapped/"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Mapped tasks returned, grouped by mapper username. |
+| `500` | Internal server error. |
+
+---
+
+### Get Tasks as OSM XML
+
+**GET** `/api/v2/projects/{project_id}/tasks/queries/xml/`
+
+Returns tasks for a project in OSM XML format, suitable for import into JOSM or other OSM editors.
+
+<CodeGroup>
+```bash Get tasks as OSM XML
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/queries/xml/?tasks=1,2" \
+  -o project-1234.osm
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="tasks" type="string">
+  Comma-separated task IDs. Omit to retrieve all tasks.
+</ParamField>
+
+<ParamField query="as_file" type="boolean" default="false">
+  When `true`, returns the response as a downloadable `.osm` file.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | OSM XML returned. |
+| `400` | Client error. |
+| `404` | No mapped tasks found. |
+| `500` | Internal server error. |
+
+---
+
+### Get Tasks as GPX
+
+**GET** `/api/v2/projects/{project_id}/tasks/queries/gpx/`
+
+Returns tasks for a project in GPX format.
+
+<CodeGroup>
+```bash Get tasks as GPX
+curl "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/queries/gpx/?tasks=1,2" \
+  -o project-1234.gpx
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="tasks" type="string">
+  Comma-separated task IDs. Omit to retrieve all tasks.
+</ParamField>
+
+<ParamField query="as_file" type="boolean" default="false">
+  When `true`, returns the response as a downloadable `.gpx` file.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | GPX XML returned. |
+| `400` | Client error. |
+| `404` | No mapped tasks found. |
+| `500` | Internal server error. |
+
+---
+
 ## Task Actions
 
 The task action endpoints form the core of the mapping and validation workflow. The typical lifecycle is:
@@ -275,6 +382,42 @@ curl -X POST \
 | `401` | Missing or invalid token. |
 | `403` | User does not hold the lock on this task. |
 | `404` | Task or project not found. |
+
+---
+
+### Undo Last Action
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/undo-last-action/{task_id}/`
+
+Reverts a task to its previous status, undoing the last mapping or validation action. Requires authentication.
+
+<CodeGroup>
+```bash Undo last action
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/undo-last-action/7/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Accept-Language: en"
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+<ParamField path="task_id" type="integer" required>
+  ID of the task to revert.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Task reverted. Returns updated task DTO. |
+| `403` | User is not permitted to undo this action. |
+| `404` | Task or project not found. |
+| `500` | Internal server error. |
 
 ---
 
@@ -440,6 +583,140 @@ curl -X POST \
 
 ---
 
+### Extend Task Lock Time
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/extend/`
+
+Extends the lock expiry time for one or more tasks currently locked by the authenticated user. Useful for long mapping sessions.
+
+<CodeGroup>
+```bash Extend lock time
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/extend/" \
+  -H "Authorization: Token sessionTokenHere==" \
+  -H "Content-Type: application/json" \
+  -d '{"taskIds": [7, 8]}'
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+#### Request Body
+
+<ParamField body="taskIds" type="array" required>
+  Array of integer task IDs whose lock time should be extended.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Lock time extended. Body: `{"Success": "Successfully extended task expiry"}` |
+| `400` | Invalid request body. |
+| `401` | Missing or invalid token. |
+| `403` | User does not hold the lock on one or more tasks. |
+| `404` | Project not found. |
+| `500` | Internal server error. |
+
+---
+
+### Map All Tasks
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/map-all/`
+
+Marks all tasks in the project as `MAPPED`. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Map all tasks
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/map-all/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "All tasks mapped"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
+### Validate All Tasks
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/validate-all/`
+
+Marks all mapped tasks in the project as `VALIDATED`. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Validate all tasks
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/validate-all/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "All tasks validated"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
+### Invalidate All Tasks
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/invalidate-all/`
+
+Marks all validated tasks in the project as `INVALIDATED`. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Invalidate all tasks
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/invalidate-all/" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Unique project ID.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "All tasks invalidated"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
 ### Reset Bad Imagery Tasks
 
 **POST** `/api/v2/projects/{project_id}/tasks/actions/reset-all-badimagery/`
@@ -500,6 +777,48 @@ curl -X POST \
 | Status | Description |
 |--------|-------------|
 | `200` | Body: `{"Success": "All tasks reset"}` |
+| `401` | Missing or invalid token. |
+| `403` | User is not a project manager. |
+| `500` | Internal server error. |
+
+---
+
+### Revert Tasks by User
+
+**POST** `/api/v2/projects/{project_id}/tasks/actions/reset-by-user/`
+
+Reverts tasks previously actioned by a specific user within the project. For example, reverts all tasks a user marked as `BADIMAGERY` or `VALIDATED`. Requires project manager or admin role.
+
+<CodeGroup>
+```bash Revert validated tasks by a user
+curl -X POST \
+  "https://tasking-manager-api.hotosm.org/api/v2/projects/1234/tasks/actions/reset-by-user/?username=badmapper&action=VALIDATED" \
+  -H "Authorization: Token sessionTokenHere=="
+```
+</CodeGroup>
+
+#### Path Parameters
+
+<ParamField path="project_id" type="integer" required>
+  Project ID.
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="username" type="string" required>
+  Username of the user whose task actions should be reverted.
+</ParamField>
+
+<ParamField query="action" type="string" required>
+  The action type to revert. Valid values: `BADIMAGERY`, `VALIDATED`.
+</ParamField>
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Body: `{"Success": "Successfully reverted tasks"}` |
+| `400` | Username or action not provided, or invalid data. |
 | `401` | Missing or invalid token. |
 | `403` | User is not a project manager. |
 | `500` | Internal server error. |
